@@ -1,0 +1,15 @@
+(defpackage #:llama
+  (:use #:cl)
+  (:export "*THREADS*" "*MODEL*" "*TOP-K*" "*TFS-Z*" "*TOP-P*" "*TYPICAL-P*" "*TEMP*"
+	   "*MIROSTAT*" "*MIROSTAT-ETA*" "*MIROSTAT-TAU*" "*REPEAT-PENALTY*"
+	   "*REPEAT-LAST-N*" "*PRESENCE-PENALTY*" "*FREQUENCY-PENALTY*" "*PENALIZE-NEWLINES*"
+	   ;; 
+	   "SYSTEM-INFO" "MMAP-SUPPORTED" "MLOCK-SUPPORTED" "PARAMS" "N-VOCAB" "N-CTX" "N-EMBD"
+	   "GET-TOKEN" "CONTEXT" "PRINT-TIMINGS" "RESET-TIMINGS" "TOKENS" "LIST-TOKENS"
+	   "TOKENIZE" "EVALUATE" "GET-EMBEDDINGS" "GET-LOGITS" "SAMPLE-TOP-P-TOP-K" "GET-VOCAB"
+	   ;;
+	   "EMBEDDING" "PERPLEXITY" "LLAMA"))
+
+(defpackage #:llama.test
+  (:use #:cl #:llama)
+  (:export "RUN"))
