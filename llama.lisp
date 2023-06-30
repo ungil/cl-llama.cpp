@@ -55,8 +55,8 @@
   #-(or lispworks allegro) (setf (cffi:mem-aref (ptr tok) :int (n tok)) id)
   (incf (n tok)))
 
-(defun llama (&key (prompt "A") (predict *predict*) (model *model*) (threads *threads*) (verbose 0) (stream t)
-		(seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
+(defun llama (&key (prompt "A") (predict *predict*) (model *model*) (threads *threads*) (verbose 0) (numa *numa*)
+		(stream t) (metal t) (seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
 		(top-k *top-k*) (tfs-z *tfs-z*) (top-p *top-p*) (typical-p *typical-p*) (temp *temp*)
 		(mirostat *mirostat*) (mirostat-eta *mirostat-eta*) (mirostat-tau *mirostat-tau*)
 		(repeat-last-n *repeat-last-n*) (repeat-penalty *repeat-penalty*)
@@ -64,7 +64,9 @@
 		(penalize-newlines *penalize-newlines*) (add-initial-space t) (add-beginning-of-sentence t))
   (assert (<= n-ctx *max-ctx*))
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
-  (let ((ctx (make-instance 'context :model model :params (context-parameters :f16-kv t :n-ctx n-ctx :seed seed)))
+  (llama-init-backend numa)
+  (let ((ctx (make-instance 'context :model model :params (context-parameters :n-ctx n-ctx :seed seed
+									      :n-gpu-layers (if metal 1 0))))
 	(embd-inp (make-instance 'tokens :size n-ctx)))
     (when add-initial-space
       ;; // Add a space in front of the first character to match OG llama tokenizer behavior      
@@ -104,13 +106,17 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 	       ;; // - take half of the last (n_ctx - n_keep) tokens and recompute the logits in a batch
 	       (when (> (+ n-past (n embd)) n-ctx)
 		 (let ((n-left (- n-past n-keep)))
-		   (setf n-past n-keep)
+		   (setf n-past (max 1 n-keep)) ;; // always keep the first token - BOS
 		   ;; // insert n_left/2 tokens at the start of embd from last_n_tokens
+		   ;; embd.insert(embd.begin(), last_n_tokens.begin() + n_ctx - n_left/2 - embd.size(), last_n_tokens.end() - embd.size());
+;;		   (format t "~& n-left: ~A  n-past: ~A  n-keep: ~A~&" n-left n-past n-keep)
 		   (let (;;(current (loop for i below (n embd) collect (get-id embd i)))
 			 (extended (loop for i from (- (+ (n embd) (floor (/ n-left 2)))) to -1
 					 collect (elt (cb-content last-tokens) (+ n-ctx i)))))
+;;		     (format t "~A => ~A" current extended)
 		     (setf (n embd) 0)
 		     (loop for id in extended do (push-id embd id)))))
+;;	       (format t "~&embd: ~A~&" (list-tokens embd :limit nil))
                ;; // evaluate tokens in batches
                ;; // embd is typically prepared beforehand to fit within a batch, but not always
 	       (loop with i = 0
@@ -184,7 +190,13 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
     (if (>= verbose 3) (print-timings ctx))))
 
 ;; ./main  --prompt "in the first part of" --n_predict 20 --seed 42
-;; in the first part of the book we learn about the main characters and how they interacted with their family, friends and the
+;; in the first part of the book we see the development of the main characters, we witness their fights and their love for
 
-;; (llama:llama :prompt "in the first part of" :predict 20 :seed 42)
-;; in the first part of the book we learn about the main characters and how they interacted with their family, friends and the
+;; ./main  --prompt "in the first part of" --n_predict 20 --seed 42 -ngl 1
+;; in the first part of the book we see the development of the main characters, we witness their fights and their love for
+
+;; (llama::llama :prompt "in the first part of" :predict 20 :seed 42 :metal nil)
+;; in the first part of the book we see the development of the main characters, we witness their fights and their love for
+
+;; (llama::llama :prompt "in the first part of" :predict 20 :seed 42 :metal t)
+;; in the first part of the book we see the development of the main characters, we witness their fights and their love for

@@ -15,7 +15,7 @@
   (let ((nsegments (floor (n tokens) (n-ctx ctx)))) ;; do blocks of size n-ctx
     (when (plusp nsegments)
       (loop for segment below nsegments
-	    for tok = (subset tokens (* (n-ctx ctx) segment) (n-ctx ctx))
+	    for tok = (subset tokens (* (n-ctx ctx) segment) (n-ctx ctx) :change-first-to-bos t)
 	    with count = 0
 	    with nll = 0
 	    do (when (> verbose 2) (print (list-tokens tok :limit 5)))
@@ -31,9 +31,9 @@
 		       finally (when (> verbose 0)
 				 (format t (if (> verbose 2) "[~D]~1,6F " "[~D]~1,4F ")
 					 (1+ segment) (exp (/ nll count))))))
-	    finally (return (exp (/ nll count)))))))
+	    finally (return (coerce (exp (/ nll count)) 'single-float))))))
 
-(defun perplexity (text &key (model *model*) (n-ctx *n-ctx*) (verbose 0)
+(defun perplexity (text &key (model *model*) (n-ctx *n-ctx*) (verbose 0) (numa *numa*)
 			  (add-initial-space nil) (add-beginning-of-sentence t) (threads *threads*))
   "Calculate perplexity as done in llama.cpp/examples/perplexity
 Full blocks of length n-ctx are used (returns nil if there is not even one full block).
@@ -48,6 +48,7 @@ If <text> is a pathname the contents of the file are used."
 		     (if (equal (aref contents (1- (length contents))) #\Newline)
 			 (adjust-array contents (list (1- (length contents))))
 			 contents)))))
+  (llama-init-backend numa)
   (let* ((ctx (make-instance 'context :model model
 				      :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size (length text))))
@@ -56,8 +57,8 @@ If <text> is a pathname the contents of the file are used."
       (when (> verbose 1) (print-timings ctx)))))
 
 ;; ./perplexity  -f ~/wikitext-2-raw/wiki.test.raw
-;; [1]4.2334,[2]4.7322,[3]5.5846,[4]6.1713,....
+;; [1]4.2333,[2]4.7093,[3]5.5769,[4]6.1806,....
 
-;; (llama:perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1)
-;; [1]4.2334 [2]4.7322 [3]5.5846 [4]6.1713 ....
+;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1)
+;; [1]4.2333 [2]4.7093 [3]5.5769 [4]6.1806
 

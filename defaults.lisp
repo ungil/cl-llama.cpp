@@ -1,6 +1,8 @@
 (in-package :llama)
 
-(defparameter *model* (truename "~/llama.cpp/models/llama-7B/ggml-model.bin"))
+(defparameter *numa* t)
+
+(defparameter *model* (truename "~/llama.cpp/models/llama-7B/ggml-model-f16.bin"))
 
 (defparameter *max-ctx* 2048)
 

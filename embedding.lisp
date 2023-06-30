@@ -9,22 +9,24 @@
   (evaluate ctx tokens 0 threads) ;; n-past = 0
   (get-embeddings ctx))
 
-(defun embedding (prompt &key (model *model*) (n-ctx *n-ctx*) (ntokens n-ctx) (verbose 0)
+(defun embedding (prompt &key (model *model*) (n-ctx *n-ctx*) (ntokens n-ctx) (verbose 0) (numa *numa*)
 			   (add-initial-space t) (add-beginning-of-sentence t) (threads *threads*))
   "Calculate embeddings for the given prompt. If passed a list of prompts it will loop over them."
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
+  (llama-init-backend numa)
   (let* ((ctx (make-instance 'context :model model
-				      :params (context-parameters :f16-kv t :embedding t :n-ctx n-ctx)))
+				      :params (context-parameters :embedding t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size ntokens)))
     (prog1
 	(if (listp prompt)
 	    (loop for text in prompt
+		  do (format t ".")
 		  collect (%embedding ctx tokens text verbose add-initial-space add-beginning-of-sentence threads))
 	    (%embedding ctx tokens prompt verbose add-initial-space add-beginning-of-sentence threads))
       (when (> verbose 1) (print-timings ctx)))))
       
 ;; ./embedding -p "testing" | head -c 28
-;; 1.384214 -1.668122 0.817734
+;; 1.381535 -1.671747 0.816995
 
-;; (subseq (llama:embedding "testing") 0 3)
-;; #(1.384214 -1.6681216 0.81773395)
+;; (subseq (embedding "testing") 0 3)
+;; #(1.3815353 -1.6717467 0.81699544)

@@ -1,7 +1,7 @@
 (in-package :llama)
 
 (unless (probe-file (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so"))
-  (error "to build the library execute 'make libllama.so' in the llama.cpp subdirectory"))
+  (error "to build the library execute 'make clean libllama.so' in the llama.cpp subdirectory"))
 
 #-(or lispworks allegro)
 (let ((library (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so")))
@@ -45,17 +45,21 @@
 #+allegro (load (asdf:system-relative-pathname "llama" "llama-ff.lisp"))
 
 (defclass context-params ()
-  ((n-ctx :initarg :n-ctx)
-   (n-parts :initarg :n-parts)
-   (seed :initarg :seed)
+  ((seed :initarg :seed)
+   (n-ctx :initarg :n-ctx)
+   (n-batch :initarg :n-batch)
+   (n-gpu-layers :initarg :n-gpu-layers)
+   (main-gpu :initarg :main-gpu)
+   (tensor-split :initarg :tensor-split)
+   (progress-callback :initarg :progress-callback)
+   (progress-callback-user-data :initarg :progress-callback-user-data)
+   (low-vram :initarg :low-vram)
    (f16-kv :initarg :f16-kv)
    (logits-all :initarg :logits-all)
    (vocab-only :initarg :vocab-only)
    (use-mmap :initarg :use-mmap)
    (use-mlock :initarg :use-mlock)
    (embedding :initarg :embedding)
-   (progress-callback :initarg :progress-callback)
-   (progress-callback-user-data :initarg :progress-callback-user-data)
    #+(or lispworks allegro) foreign-struct))
 
 (defun context-default-params ()
@@ -70,7 +74,9 @@
   (llama-mlock-supported))
 
 (defun init-from-file (model params)
-  (llama-init-from-file (namestring model) params))
+  (let ((file (namestring (probe-file (namestring model)))))
+    (assert file)
+    (llama-init-from-file file params)))
 
 #+lispworks
 (defmethod initialize-instance :after ((obj context-params) &key)
@@ -141,7 +147,7 @@
 	(mapcar (lambda (id) (get-token context id)) ids)
 	ids)))
 
-(defmethod subset ((tok tokens) start length)
+(defmethod subset ((tok tokens) start length &key change-first-to-bos)
   (let ((out (make-instance 'tokens :size length)))
     (setf (n out) length)
     (loop for tgt below length
@@ -152,6 +158,10 @@
 			  (ff:fslot-value (ptr tok) src))
 	  #-(or lispworks allegro) (setf (cffi:mem-aref (slot-value out 'foreign-pointer) :int tgt)
 					 (cffi:mem-aref (slot-value tok 'foreign-pointer) :int src)))
+    (when change-first-to-bos (setf #+lispworks (fli:dereference (slot-value out 'foreign-pointer) :index 0)
+				    #+allegro (ff:fslot-value (ptr out) 0)
+				    #-(or lispworks allegro) (cffi:mem-aref (slot-value out 'foreign-pointer) :int 0)
+				    (llama::llama-token-bos)))
     out))
 
 (defmethod print-object ((obj tokens) stream)
@@ -213,6 +223,16 @@
 
 (defmethod get-vocab ((ctx context))
   (loop for id below (n-vocab ctx) collect (get-token ctx id)))
+
+(defmethod get-vocab-new ((ctx context))
+  (let* ((n (n-vocab ctx))
+	 (scores-ptr #+lispworks (fli:allocate-foreign-object :type :int :nelems n)
+		     #+allegro (ff:allocate-fobject (list :array :int n))
+		     #-(or lispworks allegro) (cffi::foreign-alloc :int :count n))
+	 (strings-ptr #+lispworks (fli:allocate-foreign-object :type :pointer :nelems n)
+		      #+allegro (ff:allocate-fobject (list :array :pointer n))
+		      #-(or lispworks allegro) (cffi::foreign-alloc :pointer :count n)))
+    (llama-get-vocab ctx strings-ptr scores-ptr n)))
 
 ;; ;; direct access:
 ;; llama_token_bos

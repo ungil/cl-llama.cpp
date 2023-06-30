@@ -1,8 +1,18 @@
 (in-package :llama)
 
-(ff:def-foreign-type llama-context (* :void))
+;; llama_ftype
+;; llama_model_quantize_params
+;; llama_model_quantize
+;; llama_copy_state_data
+;; llama_set_state_data
+;; llama_load_session_file
+;; llama_save_session_file
+;; llama_eval_embd
+;; llama_eval_export
 
-(ff:def-foreign-type llama-progress-callback (* :void))
+(ff:def-foreign-type llama-model (* :void))
+
+(ff:def-foreign-type llama-context (* :void))
 
 (ff:def-foreign-type llama-token :int)
 
@@ -16,18 +26,24 @@
 	     (size :unsigned-long)
 	     (sorted :char boolean)))
 
+(ff:def-foreign-type llama-progress-callback (* :void))
+
 (ff:def-foreign-type llama-context-params
-    (:struct (n-ctx :int)
-	     (n-parts :int)
-	     (seed :int)
+    (:struct (seed :int)
+	     (n-ctx :int)
+	     (n-batch :int)
+	     (n-gpu-layers :int)
+	     (main-gpu :int)
+	     (tensor-split :float) ;; no cuda - llama-max-devices=1
+	     (progress-callback (* :void))
+	     (progress-callback-user-data (* :void))
+	     (low-vram :char boolean)
 	     (f16-kv :char boolean)
 	     (logits-all :char boolean)
 	     (vocab-only :char boolean)
 	     (use-mmap :char boolean)
 	     (use-mlock :char boolean)
-	     (embedding :char boolean)
-	     (progress-callback (* :void))
-	     (progress-callback-user-data (* :void))))
+	     (embedding :char boolean)))
 
 (ff:def-foreign-call (llama-context-default-params "llama_context_default_params")
     (:void)
@@ -42,15 +58,39 @@
     (:void)
   :returning :boolean)
 
+(ff:def-foreign-call (llama-init-backend "llama_init_backend")
+    ((numa :char boolean))
+  :returning :void)
+
+(ff:def-foreign-call (llama-time-us "llama_time_us")
+    (:void)
+  :returning :unsigned-long)
+
+(ff:def-foreign-call (llama-load-model-from-file "llama_load_model_from_file")
+    ((path-model (* :char))
+     (params (* llama-context-params)))
+  :returning llama-model)
+
+(ff:def-foreign-call (llama-free-model "llama_free_model")
+    ((model (* llama-model)))
+  :returning :void)
+
+(ff:def-foreign-call (llama-new-context-with-model "llama_new_context_with_model")
+    ((model (* llama-model))
+     (params (* llama-context-params)))
+  :returning llama-context)
+
+;; DEPRECATED
 (ff:def-foreign-call (llama-init-from-file "llama_init_from_file")
     ((path-model (* :char))
      (params (* llama-context-params)))
-  :returning llama-context) 
+  :returning llama-context)
 
 (ff:def-foreign-call (llama-free "llama_free")
     ((ctx (* llama-context)))
   :returning :void)
 
+;; DEPRECATED
 (ff:def-foreign-call (llama-apply-lora-from-file "llama_apply_lora_from_file")
     ((ctx (* llama-context))
      (path-lora (* :char))
@@ -58,10 +98,25 @@
      (n-threads :int))
   :returning :int)
 
+(ff:def-foreign-call (llama-model-apply-lora-from-file "llama_model_apply_lora_from_file")
+    ((model (* llama-model))
+     (path-lora (* :char))
+     (path-base-model (* :char))
+     (n-threads :int))
+  :returning :int)
+
+(ff:def-foreign-call (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
+    ((ctx (* llama-context)))
+  :returning :int)
+
 (ff:def-foreign-call (llama-set-rng-seed "llama_set_rng_seed")
     ((ctx (* llama-context))
      (seed :int))
   :returning :void)
+
+(ff:def-foreign-call (llama-get-state-size "llama_get_state_size")
+    ((ctx (* llama-context)))
+  :returning :unsigned-long)
 
 (ff:def-foreign-call (llama-eval "llama_eval")
     ((ctx (* llama-context))
@@ -89,6 +144,13 @@
 
 (ff:def-foreign-call (llama-n-embd "llama_n_embd")
     ((ctx (* llama-context)))
+  :returning :int)
+
+(ff:def-foreign-call (llama-get-vocab "llama_get_vocab")
+    ((ctx (* llama-context))
+     (strings (* (* :float)))
+     (scores (* :float))
+     (capacity :int))
   :returning :int)
 
 (ff:def-foreign-call (llama-get-logits "llama_get_logits")
@@ -210,7 +272,3 @@
 (ff:def-foreign-call (llama-print-system-info "llama_print_system_info")
     (:void)
   :returning ((* :char)))
-
-(ff:def-foreign-call (llama-describe-candidates "llama_describe_candidates")
-    ((candidates (* llama-token-data-array)))
-  :returning :void)

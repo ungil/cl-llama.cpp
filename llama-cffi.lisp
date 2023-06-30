@@ -1,8 +1,18 @@
 (in-package :llama)
 
-(cffi:defcstruct llama-context)
+;; llama_ftype
+;; llama_model_quantize_params
+;; llama_model_quantize
+;; llama_copy_state_data
+;; llama_set_state_data
+;; llama_load_session_file
+;; llama_save_session_file
+;; llama_eval_embd
+;; llama_eval_export
 
-(cffi:defctype llama-progress-callback :pointer)
+(cffi:defcstruct llama-model)
+
+(cffi:defcstruct llama-context)
 
 (cffi:defctype llama-token :int)
 
@@ -16,42 +26,56 @@
   (size :unsigned-long)
   (sorted :bool))
 
+(cffi:defctype llama-progress-callback :pointer)
+
 (cffi:defcstruct (llama-context-params :class c-params)
-  (n-ctx :int)
-  (n-parts :int)
   (seed :int)
+  (n-ctx :int)
+  (n-batch :int)
+  (n-gpu-layers :int)
+  (main-gpu :int)
+  (tensor-split (:array :float 1)) ;; no cuda - llama-max-devices=1
+  (progress-callback :pointer)
+  (progress-callback-user-data :pointer)
+  (low-vram :bool)
   (f16-kv :bool)
   (logits-all :bool)
   (vocab-only :bool)
   (use-mmap :bool)
   (use-mlock :bool)
-  (embedding :bool)
-  (progress-callback :pointer)
-  (progress-callback-user-data :pointer))
+  (embedding :bool))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-params))
-  (cffi:with-foreign-slots ((n-ctx n-parts seed f16-kv logits-all vocab-only use-mmap use-mlock embedding
-				   progress-callback progress-callback-user-data)
+  (cffi:with-foreign-slots ((seed n-ctx n-batch n-gpu-layers main-gpu tensor-split
+				  progress-callback progress-callback-user-data
+				  low-vram f16-kv logits-all vocab-only use-mmap use-mlock embedding)
 			    ptr (:struct llama-context-params))
-    (make-instance 'context-params :n-ctx n-ctx :n-parts n-parts :seed seed :f16-kv f16-kv :logits-all logits-all
-				   :vocab-only vocab-only :use-mmap use-mmap :use-mlock use-mlock :embedding embedding
-				   :progress-callback progress-callback :progress-callback-user-data progress-callback-user-data)))
+    (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch
+				   :n-gpu-layers n-gpu-layers :main-gpu main-gpu :tensor-split tensor-split
+				   :progress-callback progress-callback :progress-callback-user-data progress-callback-user-data
+				   :low-vram low-vram :f16-kv f16-kv :logits-all logits-all :vocab-only vocab-only
+				   :use-mmap use-mmap :use-mlock use-mlock :embedding embedding)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-params) ptr)
-  (cffi:with-foreign-slots ((n-ctx n-parts seed f16-kv logits-all vocab-only use-mmap use-mlock embedding
-				   progress-callback progress-callback-user-data)
+  (cffi:with-foreign-slots ((seed n-ctx n-batch n-gpu-layers main-gpu tensor-split
+				  progress-callback progress-callback-user-data
+				  low-vram f16-kv logits-all vocab-only use-mmap use-mlock embedding)
 			    ptr (:struct llama-context-params))
-    (setf n-ctx (slot-value value 'n-ctx)
-	  n-parts (slot-value value 'n-parts)
-	  seed (slot-value value 'seed)
+    (setf seed (slot-value value 'seed)
+	  n-ctx (slot-value value 'n-ctx)
+	  n-batch (slot-value value 'n-batch)
+	  n-gpu-layers (slot-value value 'n-gpu-layers)
+	  main-gpu (slot-value value 'main-gpu)
+	  tensor-split (slot-value value 'tensor-split)
+	  progress-callback (slot-value value 'progress-callback)
+	  progress-callback-user-data (slot-value value 'progress-callback-user-data)
+	  low-vram (slot-value value 'low-vram)
 	  f16-kv (slot-value value 'f16-kv)
 	  logits-all (slot-value value 'logits-all)
 	  vocab-only (slot-value value 'vocab-only)
 	  use-mmap (slot-value value 'use-mmap)
 	  use-mlock (slot-value value 'use-mlock)
-	  embedding (slot-value value 'embedding)
-	  progress-callback (slot-value value 'progress-callback)
-	  progress-callback-user-data (slot-value value 'progress-callback-user-data))))
+	  embedding (slot-value value 'embedding))))
 
 (defmethod cffi:free-translated-object (ptr (type c-params) param)
   (cffi:foreign-free ptr))
@@ -62,6 +86,23 @@
 
 (cffi:defcfun llama-mlock-supported :boolean)
 
+(cffi:defcfun llama-init-backend :void
+  (numa :boolean))
+
+(cffi:defcfun llama-time-us :int64)
+
+(cffi:defcfun llama-load-model-from-file (:pointer (:struct llama-model))
+  (path-model :string)
+  (params (:struct llama-context-params)))
+
+(cffi:defcfun llama-free-model :void
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-new-context-with-model (:pointer (:struct llama-context))
+  (model (:struct llama-model))
+  (params (:struct llama-context-params)))
+
+;; DEPRECATED
 (cffi:defcfun llama-init-from-file (:pointer (:struct llama-context))
   (path-model :string)
   (params (:struct llama-context-params)))
@@ -69,15 +110,28 @@
 (cffi:defcfun llama-free :void
   (ctx (:pointer (:struct llama-context))))
 
+;; DEPRECATED
 (cffi:defcfun llama-apply-lora-from-file :int
   (ctx (:pointer (:struct llama-context)))
   (path-lora :string)
   (path-base-model :string)
   (n-threads :int))
 
+(cffi:defcfun llama-model-apply-lora-from-file :int
+  (model (:pointer (:struct llama-model)))
+  (path-lora :string)
+  (path-base-model :string)
+  (n-threads :int))
+
+(cffi:defcfun llama-get-kv-cache-token-count :int
+  (ctx (:pointer (:struct llama-context))))
+
 (cffi:defcfun llama-set-rng-seed :void
   (ctx (:pointer (:struct llama-context)))
   (seed :int))
+
+(cffi:defcfun llama-get-state-size :unsigned-long
+  (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-eval :int
   (ctx (:pointer (:struct llama-context)))
@@ -101,6 +155,12 @@
 
 (cffi:defcfun llama-n-embd :int
   (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-get-vocab :int
+  (ctx (:pointer (:struct llama-context)))
+  (strings (:pointer :string))
+  (scores (:pointer :float))
+  (capacity :int))
 
 (cffi:defcfun llama-get-logits (:pointer :float)
   (ctx (:pointer (:struct llama-context))))
@@ -196,6 +256,3 @@
   (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-print-system-info :string)
-
-(cffi:defcfun llama-describe-candidates :void
-    (candidates (:pointer (:struct llama-token-data-array))))
