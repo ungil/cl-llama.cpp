@@ -25,6 +25,9 @@
 (5am:test info
   (5am:finishes (format t "~&~A~&" (llama:system-info))))
 
+(5am:test max-devices
+  (5am:is (= 1 (llama:max-devices))))
+
 (5am:test mmap
   (5am:is (llama:mmap-supported)))
 

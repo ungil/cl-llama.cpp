@@ -13,7 +13,7 @@
 			   (add-initial-space t) (add-beginning-of-sentence t) (threads *threads*))
   "Calculate embeddings for the given prompt. If passed a list of prompts it will loop over them."
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
-  (llama-init-backend numa)
+  (llama-backend-init numa)
   (let* ((ctx (make-instance 'context :model model
 				      :params (context-parameters :embedding t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size ntokens)))

@@ -64,7 +64,7 @@
 		(penalize-newlines *penalize-newlines*) (add-initial-space t) (add-beginning-of-sentence t))
   (assert (<= n-ctx *max-ctx*))
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
-  (llama-init-backend numa)
+  (llama-backend-init numa)
   (let ((ctx (make-instance 'context :model model :params (context-parameters :n-ctx n-ctx :seed seed
 									      :n-gpu-layers (if metal 1 0))))
 	(embd-inp (make-instance 'tokens :size n-ctx)))

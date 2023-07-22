@@ -9,6 +9,7 @@
 ;; llama_save_session_file
 ;; llama_eval_embd
 ;; llama_eval_export
+;; llama_sample_classifier_free_guidance
 
 (fli:define-c-struct (llama-model (:foreign-name "llama_model")))
 
@@ -41,7 +42,9 @@
   (n-batch :int)
   (n-gpu-layers :int)
   (main-gpu :int)
-  (tensor-split :float) ;; no cuda - llama-max-devices=1
+  (tensor-split (:pointer :float))
+  (rope-freq-base :float)
+  (rope-freq-scale :float)
   (progress-callback llama-progress-callback)
   (progress-callback-user-data (:pointer :void))
   (low-vram (:boolean :byte))
@@ -51,6 +54,21 @@
   (use-mmap (:boolean :byte))
   (use-mlock (:boolean :byte))
   (embedding (:boolean :byte)))
+
+(fli:define-c-struct (llama-timings (:foreign-name "llama_timings"))
+    (t-start-ms :double)
+  (t-end-ms :double)
+  (t-load-ms :double)
+  (t-sample-ms :double)
+  (t-p-eval-ms :double)
+  (t-eval-ms :double)
+  (n-sample :int)
+  (n-p-eval :int)
+  (n-eval :int))
+
+(fli:define-foreign-function (llama-max-devices "llama_max_devices")
+  nil
+  :result-type :int)
 
 (fli:define-foreign-function (llama-context-default-params "llama_context_default_params")
   nil
@@ -64,8 +82,12 @@
   nil
   :result-type (:boolean :byte))
 
-(fli:define-foreign-function (llama-init-backend "llama_init_backend")
+(fli:define-foreign-function (llama-backend-init "llama_backend_init")
     ((numa (:boolean :byte)))
+  :result-type :void)
+
+(fli:define-foreign-function (llama-backend-free "llama_backend_free")
+  nil
   :result-type :void)
 
 (fli:define-foreign-function (llama-time-us "llama_time_us")
@@ -140,6 +162,14 @@
      (add-bos (:boolean :byte)))
   :result-type :int)
 
+(fli:define-foreign-function (llama-tokenize-with-model "llama_tokenize_with_model")
+    ((model (:pointer (:struct llama-model)))
+     (text (:reference-pass (:ef-mb-string :external-format :utf-8)))
+     (tokens (:pointer llama-token))
+     (n-max-tokens :int)
+     (add-bos (:boolean :byte)))
+  :result-type :int)
+
 (fli:define-foreign-function (llama-n-vocab "llama_n_vocab")
     ((ctx (:pointer (:struct llama-context))))
   :result-type :int)
@@ -152,8 +182,27 @@
     ((ctx (:pointer (:struct llama-context))))
   :result-type :int)
 
+(fli:define-foreign-function (llama-n-vocab-from-model "llama_n_vocab_from_model")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
+
+(fli:define-foreign-function (llama-n-ctx-from-model "llama_n_ctx_from_model")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
+
+(fli:define-foreign-function (llama-n-embd-from-model "llama_n_embd_from_model")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
+
 (fli:define-foreign-function (llama-get-vocab "llama_get_vocab")
     ((ctx (:pointer (:struct llama-context)))
+     (strings (:pointer :ef-mb-string))
+     (scores (:pointer :float))
+     (capacity :int))
+  :result-type :int)
+
+(fli:define-foreign-function (llama-get-vocab-from-model "llama_get_vocab_from_model")
+    ((model (:pointer (:struct llama-model)))
      (strings (:pointer :ef-mb-string))
      (scores (:pointer :float))
      (capacity :int))
@@ -169,6 +218,11 @@
 
 (fli:define-foreign-function (llama-token-to-str "llama_token_to_str")
     ((ctx (:pointer (:struct llama-context)))
+     (token llama-token))
+  :result-type (:pointer (:const :char)))
+
+(fli:define-foreign-function (llama-token-to-str-with-model "llama_token_to_str_with_model")
+    ((model (:pointer (:struct llama-model)))
      (token llama-token))
   :result-type (:pointer (:const :char)))
 
@@ -268,6 +322,10 @@
     ((ctx (:pointer (:struct llama-context)))
      (candidates (:pointer llama-token-data-array)))
   :result-type llama-token)
+
+(fli:define-foreign-function (llama-get-timings "llama_get_timings")
+    ((ctx (:pointer (:struct llama-context))))
+  :result-type (:struct llama-timings))
 
 (fli:define-foreign-function (llama-print-timings "llama_print_timings")
     ((ctx (:pointer (:struct llama-context))))

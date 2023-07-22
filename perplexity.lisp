@@ -48,7 +48,7 @@ If <text> is a pathname the contents of the file are used."
 		     (if (equal (aref contents (1- (length contents))) #\Newline)
 			 (adjust-array contents (list (1- (length contents))))
 			 contents)))))
-  (llama-init-backend numa)
+  (llama-backend-init numa)
   (let* ((ctx (make-instance 'context :model model
 				      :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size (length text))))

@@ -51,6 +51,8 @@
    (n-gpu-layers :initarg :n-gpu-layers)
    (main-gpu :initarg :main-gpu)
    (tensor-split :initarg :tensor-split)
+   (rope-freq-base :initarg :rope-freq-base)
+   (rope-freq-scale :initarg :rope-freq-scale)
    (progress-callback :initarg :progress-callback)
    (progress-callback-user-data :initarg :progress-callback-user-data)
    (low-vram :initarg :low-vram)
@@ -61,6 +63,9 @@
    (use-mlock :initarg :use-mlock)
    (embedding :initarg :embedding)
    #+(or lispworks allegro) foreign-struct))
+
+(defun max-devices ()
+  (llama-max-devices))
 
 (defun context-default-params ()
   #+lispworks (let ((ptr (fli:allocate-foreign-object :pointer-type '(:pointer (:struct llama-context-params)))))
