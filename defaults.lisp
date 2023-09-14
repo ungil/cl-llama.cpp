@@ -1,8 +1,12 @@
 (in-package :llama)
 
+(defvar *metal* (stringp (ignore-errors
+			  (uiop:run-program (format nil "otool -L ~A | grep Metal" *lib*)
+					    :force-shell t :output :string))))
+
 (defparameter *numa* t)
 
-(defparameter *model* (truename "~/llama.cpp/models/llama-7B/ggml-model-f16.bin"))
+(defparameter *model* (truename "~/llama.cpp/models/7B/ggml-model-f16.gguf"))
 
 (defparameter *max-ctx* 2048)
 

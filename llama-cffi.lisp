@@ -1,21 +1,18 @@
 (in-package :llama)
 
-;; llama_ftype
-;; llama_model_quantize_params
-;; llama_model_quantize
-;; llama_copy_state_data
-;; llama_set_state_data
-;; llama_load_session_file
-;; llama_save_session_file
-;; llama_eval_embd
-;; llama_eval_export
-;; llama_sample_classifier_free_guidance
-
 (cffi:defcstruct llama-model)
 
 (cffi:defcstruct llama-context)
 
 (cffi:defctype llama-token :int)
+
+;; llama_log_level
+
+;; llama_vocab_type
+
+;; llama_token_type
+
+;; llama_ftype
 
 (cffi:defcstruct llama-token-data
   (id llama-token)
@@ -41,12 +38,25 @@
   (progress-callback :pointer)
   (progress-callback-user-data :pointer)
   (low-vram :bool)
+  (mul-mat :bool)
   (f16-kv :bool)
   (logits-all :bool)
   (vocab-only :bool)
   (use-mmap :bool)
   (use-mlock :bool)
   (embedding :bool))
+
+;; llama_log_callback
+
+;; llama_model_quantize_params
+
+(cffi:defcstruct llama-grammar)
+
+;; llama_gretype
+
+(cffi:defcstruct llama-grammar-element
+  (type :int)
+  (value :unsigned-long))
 
 (cffi:defcstruct (llama-timings :class c-timings)
   (t-start-ms :double)
@@ -63,20 +73,20 @@
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-gpu-layers main-gpu tensor-split
 				  rope-freq-base rope-freq-scale
 				  progress-callback progress-callback-user-data
-				  low-vram f16-kv logits-all vocab-only use-mmap use-mlock embedding)
+				  low-vram mul-mat f16-kv logits-all vocab-only use-mmap use-mlock embedding)
 			    ptr (:struct llama-context-params))
     (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch
 				   :n-gpu-layers n-gpu-layers :main-gpu main-gpu :tensor-split tensor-split
 				   :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
 				   :progress-callback progress-callback :progress-callback-user-data progress-callback-user-data
-				   :low-vram low-vram :f16-kv f16-kv :logits-all logits-all :vocab-only vocab-only
+				   :low-vram low-vram :mul-mat mul-mat :f16-kv f16-kv :logits-all logits-all :vocab-only vocab-only
 				   :use-mmap use-mmap :use-mlock use-mlock :embedding embedding)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-params) ptr)
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-gpu-layers main-gpu tensor-split
 				  rope-freq-base rope-freq-scale
 				  progress-callback progress-callback-user-data
-				  low-vram f16-kv logits-all vocab-only use-mmap use-mlock embedding)
+				  low-vram mul-mat f16-kv logits-all vocab-only use-mmap use-mlock embedding)
 			    ptr (:struct llama-context-params))
     (setf seed (slot-value value 'seed)
 	  n-ctx (slot-value value 'n-ctx)
@@ -89,6 +99,7 @@
 	  progress-callback (slot-value value 'progress-callback)
 	  progress-callback-user-data (slot-value value 'progress-callback-user-data)
 	  low-vram (slot-value value 'low-vram)
+	  mul-mat (slot-value value 'mul-mat)
 	  f16-kv (slot-value value 'f16-kv)
 	  logits-all (slot-value value 'logits-all)
 	  vocab-only (slot-value value 'vocab-only)
@@ -99,20 +110,14 @@
 (defmethod cffi:free-translated-object (ptr (type c-params) param)
   (cffi:foreign-free ptr))
 
-(cffi:defcfun llama-max-devices :int)
-
 (cffi:defcfun llama-context-default-params (:struct llama-context-params))
 
-(cffi:defcfun llama-mmap-supported :boolean)
-
-(cffi:defcfun llama-mlock-supported :boolean)
+;; llama_model_quantize_default_params
 
 (cffi:defcfun llama-backend-init :void
   (numa :boolean))
 
 (cffi:defcfun llama-backend-free :void)
-
-(cffi:defcfun llama-time-us :int64)
 
 (cffi:defcfun llama-load-model-from-file (:pointer (:struct llama-model))
   (path-model :string)
@@ -122,23 +127,71 @@
   (model (:pointer (:struct llama-model))))
 
 (cffi:defcfun llama-new-context-with-model (:pointer (:struct llama-context))
-  (model (:struct llama-model))
+  (model (:pointer (:struct llama-model)))
   (params (:struct llama-context-params)))
 
-;; DEPRECATED
-(cffi:defcfun llama-init-from-file (:pointer (:struct llama-context))
-  (path-model :string)
-  (params (:struct llama-context-params)))
+;; ;; DEPRECATED
+;; (cffi:defcfun llama-init-from-file (:pointer (:struct llama-context))
+;;   (path-model :string)
+;;   (params (:struct llama-context-params)))
 
 (cffi:defcfun llama-free :void
   (ctx (:pointer (:struct llama-context))))
 
-;; DEPRECATED
-(cffi:defcfun llama-apply-lora-from-file :int
-  (ctx (:pointer (:struct llama-context)))
-  (path-lora :string)
-  (path-base-model :string)
-  (n-threads :int))
+(cffi:defcfun llama-time-us :int64)
+
+(cffi:defcfun llama-max-devices :int)
+
+(cffi:defcfun llama-mmap-supported :boolean)
+
+(cffi:defcfun llama-mlock-supported :boolean)
+
+(cffi:defcfun llama-n-vocab :int
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-n-ctx :int
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-n-ctx-train :int
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-n-embd :int
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-vocab-type :int
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-model-n-vocab :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-ctx :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-ctx-train :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-embd :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-desc :int
+  (model (:pointer (:struct llama-model)))
+  (buf :string)
+  (buf-size :unsigned-long))
+
+(cffi:defcfun llama-model-size :unsigned-long
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-params :unsigned-long
+  (model (:pointer (:struct llama-model))))
+
+;; llama_model_quantize
+
+;; ;; DEPRECATED
+;; (cffi:defcfun llama-apply-lora-from-file :int
+;;   (ctx (:pointer (:struct llama-context)))
+;;   (path-lora :string)
+;;   (path-base-model :string)
+;;   (n-threads :int))
 
 (cffi:defcfun llama-model-apply-lora-from-file :int
   (model (:pointer (:struct llama-model)))
@@ -156,12 +209,56 @@
 (cffi:defcfun llama-get-state-size :unsigned-long
   (ctx (:pointer (:struct llama-context))))
 
+;; llama_copy_state_data
+
+;; llama_set_state_data
+
+;; llama_load_session_file
+
+;; llama_save_session_file
+
 (cffi:defcfun llama-eval :int
   (ctx (:pointer (:struct llama-context)))
   (tokens (:pointer llama-token))
   (n-tokens :int)
   (n-past :int)
   (n-threads :int))
+
+(cffi:defcfun llama-eval-embd :int
+  (ctx (:pointer (:struct llama-context)))
+  (embd (:pointer :float))
+  (n-tokens :int)
+  (n-past :int)
+  (n-threads :int))
+
+;; llama_eval_export
+
+(cffi:defcfun llama-get-logits (:pointer :float)
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-get-embeddings (:pointer :float)
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-token-get-text :string
+  (ctx (:pointer (:struct llama-context)))
+  (token llama-token))
+
+(cffi:defcfun llama-token-get-score :float
+  (ctx (:pointer (:struct llama-context)))
+  (token llama-token))
+
+(cffi:defcfun llama-token-get-type :int
+  (ctx (:pointer (:struct llama-context)))
+  (token llama-token))
+
+(cffi:defcfun llama-token-bos llama-token
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-token-eos llama-token
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-token-nl llama-token
+  (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-tokenize :int
   (ctx (:pointer (:struct llama-context)))
@@ -177,55 +274,28 @@
   (n-max-tokens :int)
   (add-bos :bool))
 
-(cffi:defcfun llama-n-vocab :int
-  (ctx (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-n-ctx :int
-  (ctx (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-n-embd :int
-  (ctx (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-n-vocab-with-model :int
-  (model (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-n-ctx-with-model :int
-  (model (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-n-embd-with-model :int
-  (model (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-get-vocab :int
+(cffi:defcfun llama-token-to-str :int
   (ctx (:pointer (:struct llama-context)))
-  (strings (:pointer :string))
-  (scores (:pointer :float))
-  (capacity :int))
+  (token llama-token)
+  (buf :string)
+  (length :int))
 
-(cffi:defcfun llama-get-vocab-with-model :int
+(cffi:defcfun llama-token-to-str-with-model :int
   (model (:pointer (:struct llama-model)))
-  (strings (:pointer :string))
-  (scores (:pointer :float))
-  (capacity :int))
+  (token llama-token)
+  (buf :string)
+  (length :int))
 
-(cffi:defcfun llama-get-logits (:pointer :float)
-  (ctx (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-get-embeddings (:pointer :float)
-  (ctx (:pointer (:struct llama-context))))
-
-(cffi:defcfun llama-token-to-str :string
-  (ctx (:pointer (:struct llama-context)))
-  (token llama-token))
-
-(cffi:defcfun llama-token-to-str-with-model :string
+(cffi:defcfun llama-grammar-init (:pointer (:struct llama-grammar))
   (model (:pointer (:struct llama-model)))
-  (token llama-token))
+  (n-rules :unsigned-long)
+  (start-rule-index :unsigned-long))
 
-(cffi:defcfun llama-token-bos llama-token)
+(cffi:defcfun llama-grammar-free :void
+  (grammar (:pointer (:struct llama-grammar))))
 
-(cffi:defcfun llama-token-eos llama-token)
-
-(cffi:defcfun llama-token-nl llama-token)
+(cffi:defcfun llama-grammar-copy (:pointer (:struct llama-grammar))
+  (grammar (:pointer (:struct llama-grammar))))
 
 (cffi:defcfun llama-sample-repetition-penalty :void
   (ctx (:pointer (:struct llama-context)))
@@ -241,6 +311,12 @@
   (last-tokens-size :unsigned-long)
   (alpha-frequency :float)
   (alpha-presence :float))
+
+(cffi:defcfun llama-sample-classifier-free-guidance :void
+  (ctx (:pointer (:struct llama-context)))
+  (candidates (:pointer (:struct llama-token-data-array)))
+  (guidance-ctx (:pointer (:struct llama-context)))
+  (scale :float))
 
 (cffi:defcfun llama-sample-softmax :void
   (ctx (:pointer (:struct llama-context)))
@@ -275,6 +351,11 @@
   (candidates (:pointer (:struct llama-token-data-array)))
   (temp :float))
 
+(cffi:defcfun llama-sample-grammar :void
+  (ctx (:pointer (:struct llama-context)))
+  (candidates (:pointer (:struct llama-token-data-array)))
+  (grammar (:pointer (:struct llama-grammar))))
+
 (cffi:defcfun llama-sample-token-mirostat llama-token
   (ctx (:pointer (:struct llama-context)))
   (candidates (:pointer (:struct llama-token-data-array)))
@@ -298,6 +379,19 @@
   (ctx (:pointer (:struct llama-context)))
   (candidates (:pointer (:struct llama-token-data-array))))
 
+(cffi:defcfun llama-grammar-accept-token :void
+  (ctx (:pointer (:struct llama-context)))
+  (grammar (:pointer (:struct llama-grammar)))
+  (token llama-token))
+
+;; llama_beam_view
+
+;; llama_beam_state
+
+;; llama_beam_search_callback_fn_t
+
+;; llama_beam_search
+
 (cffi:defcfun llama-get-timings (:struct llama-timings)
   (ctx (:pointer (:struct llama-context))))
 
@@ -308,3 +402,7 @@
   (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-print-system-info :string)
+
+;; llama_log_set
+
+;; llama_dump_timing_info_yaml

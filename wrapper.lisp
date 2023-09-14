@@ -1,19 +1,23 @@
 (in-package :llama)
 
-(unless (probe-file (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so"))
+(defvar *lib* (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so"))
+
+(unless (probe-file *lib*)
   (error "to build the library execute 'make clean libllama.so' in the llama.cpp subdirectory"))
 
 #-(or lispworks allegro)
-(let ((library (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so")))
-  (cffi:load-foreign-library library)
-  (format t "~%~%   Foreign library ~A loaded~%~%~%" library))
+(progn
+  (cffi:load-foreign-library *lib*)
+  (format t "~%~%   Foreign library ~A loaded~%~%~%" *lib*))
 
 #-(or lispworks allegro) (load (asdf:system-relative-pathname "llama" "llama-cffi.lisp"))
 
 #+lispworks
-(let ((library (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so")))
-  (fli:register-module "libllama.so" :file-name library)
-  (format cl:t "~%~%   Foreign library ~A loaded~%~%~%" library))
+(progn
+  (fli:register-module "libllama.so" :file-name *lib*)
+  (format cl:t "~%~%   Foreign library ~A loaded~%~%~%" *lib*))
+
+#+lispworks (assert (not (eq lw:*default-character-element-type* 'base-char)))
 
 #|
 (require "foreign-parser")
@@ -38,9 +42,9 @@
 #+lispworks (load (asdf:system-relative-pathname "llama" "llama-dff.lisp"))
 
 #+allegro
-(let ((library (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so")))
-  (load library :foreign t) ;;"libllama.so" :file-name library)
-  (format cl:t "~%~%   Foreign library ~A loaded~%~%~%" library))
+(progn
+  (load *lib* :foreign t) ;;"libllama.so" :file-name library)
+  (format cl:t "~%~%   Foreign library ~A loaded~%~%~%" *lib*))
 
 #+allegro (load (asdf:system-relative-pathname "llama" "llama-ff.lisp"))
 
@@ -56,6 +60,7 @@
    (progress-callback :initarg :progress-callback)
    (progress-callback-user-data :initarg :progress-callback-user-data)
    (low-vram :initarg :low-vram)
+   (mul-mat :initarg :mul-mat)
    (f16-kv :initarg :f16-kv)
    (logits-all :initarg :logits-all)
    (vocab-only :initarg :vocab-only)
@@ -64,13 +69,13 @@
    (embedding :initarg :embedding)
    #+(or lispworks allegro) foreign-struct))
 
-(defun max-devices ()
-  (llama-max-devices))
-
 (defun context-default-params ()
   #+lispworks (let ((ptr (fli:allocate-foreign-object :pointer-type '(:pointer (:struct llama-context-params)))))
 		(llama-context-default-params :result-pointer ptr))
   #-lispworks (llama-context-default-params))
+
+(defun max-devices ()
+  (llama-max-devices))
 
 (defun mmap-supported ()
   (llama-mmap-supported))
@@ -78,10 +83,14 @@
 (defun mlock-supported ()
   (llama-mlock-supported))
 
-(defun init-from-file (model params)
-  (let ((file (namestring (probe-file (namestring model)))))
+(defun model-from-file (filename &optional (params (context-default-params)))
+  (let ((file (namestring (probe-file (namestring filename)))))
     (assert file)
-    (llama-init-from-file file params)))
+    (llama-load-model-from-file file params)))
+
+(defun context-from-model (model &optional (params (context-default-params)))
+  (assert model)
+  (llama-new-context-with-model model params))
 
 #+lispworks
 (defmethod initialize-instance :after ((obj context-params) &key)
@@ -105,26 +114,90 @@
 		      #-allegro (setf (slot-value params (intern (symbol-name key) "LLAMA")) value))
 		params))
 
-(defclass context ()
+(defclass mdl ()
+  ((file :initarg :file :accessor file)
+   (params :initarg :params :accessor params
+	   :initform #+lispworks (make-instance 'context-params)
+		     #-lispworks (context-default-params))
+   (foreign-pointer :accessor ptr)))
+
+(defmethod initialize-instance :after ((mdl mdl) &key)
+  (let ((ptr (model-from-file (file mdl)
+			      #+lispworks (slot-value (params mdl) 'foreign-struct)
+			      #-lispworks (params mdl))))
+    (setf (slot-value mdl 'foreign-pointer) ptr)
+    (tg:finalize mdl (lambda () (llama-free-model ptr))))
+  mdl)
+
+(defmethod n-vocab ((mdl mdl))
+  (llama-model-n-vocab (ptr mdl)))
+
+(defmethod n-ctx ((mdl mdl))
+  (llama-model-n-ctx (ptr mdl)))
+
+(defmethod n-embd ((mdl mdl))
+  (llama-model-n-embd (ptr mdl)))
+
+(defmethod size ((mdl mdl))
+  (llama-model-size (ptr mdl)))
+
+(defmethod n-params ((mdl mdl))
+  (llama-model-n-params (ptr mdl)))
+
+(defmethod desc ((mdl mdl))
+  #+lispworks
+  (fli:with-dynamic-foreign-objects ()
+    (let ((c-string (fli:allocate-dynamic-foreign-object :type :char :nelems 100)))
+      (llama-model-desc (ptr mdl) c-string 100)
+      (fli:convert-from-foreign-string c-string)))
+  #+allegro
+  (let ((c-string (ff:allocate-fobject :char :c 100)))
+    (unwind-protect
+	 (progn (llama-model-desc (ptr mdl) c-string 100)
+		(excl:native-to-string c-string))
+      (ff:free-fobject c-string)))
+  #-(or lispworks allegro)
+  (cffi:with-foreign-pointer-as-string ((buf buf-size) 100)
+    (llama-model-desc (ptr mdl) buf buf-size)
+    (cffi:foreign-string-to-lisp buf)))
+
+(defmethod print-object ((obj mdl) stream)
+  (print-unreadable-object (obj stream :type t)
+    (format stream "~A ~A" (desc obj) (file obj))))
+
+(defclass ctx ()
   ((model :initarg :model :accessor model)
    (params :initarg :params :accessor params
 	   :initform #+lispworks (make-instance 'context-params)
 		     #-lispworks (context-default-params))
-   foreign-pointer))
+   (foreign-pointer :accessor ptr)))
 
-(defmethod initialize-instance :after ((ctx context) &key)
-  (let ((ptr (init-from-file (model ctx) #+lispworks (slot-value (params ctx) 'foreign-struct)
-					 #-lispworks (params ctx))))
-    (setf (slot-value ctx 'foreign-pointer) ptr)
+(defmethod initialize-instance :after ((ctx ctx) &key)
+  (let ((ptr (context-from-model (ptr (model ctx))
+				 #+lispworks (slot-value (params ctx) 'foreign-struct)
+				 #-lispworks (params ctx))))
+    (setf (ptr ctx) ptr)
     (tg:finalize ctx (lambda () (llama-free ptr))))
   ctx)
 
-(defmethod print-object ((obj context) stream)
+(defmethod n-vocab ((ctx ctx))
+  (llama-n-vocab (ptr ctx)))
+
+(defmethod n-ctx ((ctx ctx))
+  (llama-n-ctx (ptr ctx)))
+
+(defmethod n-embd ((ctx ctx))
+  (llama-n-embd (ptr ctx)))
+
+(defmethod vocab-type ((ctx ctx))
+  (llama-vocab-type (ptr ctx)))
+
+(defmethod print-object ((obj ctx) stream)
   (print-unreadable-object (obj stream :type t)
     (format stream "~A ~A" (model obj) (params obj))))
 
-(defmethod evaluate ((ctx context) tokens n-past &optional (threads 4))
-  (llama-eval (slot-value ctx 'foreign-pointer) (ptr tokens) (n tokens) n-past threads))
+(defmethod evaluate ((ctx ctx) tokens n-past &optional (threads 4))
+  (llama-eval (ptr ctx) (ptr tokens) (n tokens) n-past threads))
 
 (defclass tokens ()
   ((n :accessor n :initform 0)
@@ -135,7 +208,7 @@
   (let ((ptr #+lispworks (fli:allocate-foreign-object :type :int :nelems (size tok))
 	     #+allegro (ff:allocate-fobject (list :array :int (size tok)))
 	     #-(or lispworks allegro) (cffi::foreign-alloc :int :count (size tok))))
-    (setf (slot-value tok 'foreign-pointer) ptr)
+    (setf (ptr tok) ptr)
     (tg:finalize tok (lambda () #+lispworks (fli:free ptr)
 			     ;;#+allegro (ff:free-fobject ptr)
 			     #-(or lispworks allegro) (cffi:foreign-free ptr))))
@@ -145,9 +218,9 @@
   (let ((ids (loop for i below (n tok)
 		   repeat (or limit (n tok))
 		   collect
-		   #+lispworks (fli:dereference (slot-value tok 'foreign-pointer) :index i)
+		   #+lispworks (fli:dereference (ptr tok) :index i)
 		   #+allegro (ff:fslot-value (ptr tok) i)
-		   #-(or lispworks allegro) (cffi:mem-aref (slot-value tok 'foreign-pointer) :int i))))
+		   #-(or lispworks allegro) (cffi:mem-aref (ptr tok) :int i))))
     (if context
 	(mapcar (lambda (id) (get-token context id)) ids)
 	ids)))
@@ -157,16 +230,16 @@
     (setf (n out) length)
     (loop for tgt below length
 	  for src from start
-	  do #+lispworks (setf (fli:dereference (slot-value out 'foreign-pointer) :index tgt)
-			       (fli:dereference (slot-value tok 'foreign-pointer) :index src))
+	  do #+lispworks (setf (fli:dereference (ptr out) :index tgt)
+			       (fli:dereference (ptr tok) :index src))
 	  #+allegro (setf (ff:fslot-value (ptr out) tgt)
 			  (ff:fslot-value (ptr tok) src))
-	  #-(or lispworks allegro) (setf (cffi:mem-aref (slot-value out 'foreign-pointer) :int tgt)
-					 (cffi:mem-aref (slot-value tok 'foreign-pointer) :int src)))
-    (when change-first-to-bos (setf #+lispworks (fli:dereference (slot-value out 'foreign-pointer) :index 0)
+	  #-(or lispworks allegro) (setf (cffi:mem-aref (ptr out) :int tgt)
+					 (cffi:mem-aref (ptr tok) :int src)))
+    (when change-first-to-bos (setf #+lispworks (fli:dereference (ptr out) :index 0)
 				    #+allegro (ff:fslot-value (ptr out) 0)
-				    #-(or lispworks allegro) (cffi:mem-aref (slot-value out 'foreign-pointer) :int 0)
-				    (llama::llama-token-bos)))
+				    #-(or lispworks allegro) (cffi:mem-aref (ptr out) :int 0)
+				    (token-bos change-first-to-bos)))
     out))
 
 (defmethod print-object ((obj tokens) stream)
@@ -176,29 +249,20 @@
 	   (add (max 0 (- (n obj) limit))))
       (format stream "~A and ~D tokens more" ids add))))
 
-(defmethod tokenize ((ctx context) (tok fixnum) text &key add-beginning-of-sentence)
+(defmethod tokenize ((ctx ctx) (tok fixnum) text &key add-beginning-of-sentence)
   (tokenize ctx (make-instance 'tokens :size tok)
 	    text :add-beginning-of-sentence add-beginning-of-sentence))
 
-(defmethod tokenize ((ctx context) (tok tokens) text &key add-beginning-of-sentence)
-  (let ((res (llama-tokenize (slot-value ctx 'foreign-pointer) text
+(defmethod tokenize ((ctx ctx) (tok tokens) text &key add-beginning-of-sentence)
+  (let ((res (llama-tokenize (ptr ctx) text
 			     (ptr tok) (size tok) add-beginning-of-sentence)))
     (when (minusp res) (error "returned ~D, more than buffer size ~D" (- res) (size tok)))
     (setf (n tok) res)
     tok))
 
-(defmethod n-vocab ((ctx context))
-  (llama-n-vocab (slot-value ctx 'foreign-pointer)))
-
-(defmethod n-ctx ((ctx context))
-  (llama-n-ctx (slot-value ctx 'foreign-pointer)))
-
-(defmethod n-embd ((ctx context))
-  (llama-n-embd (slot-value ctx 'foreign-pointer)))
-
-(defmethod get-embeddings ((ctx context))
-  (let ((ptr (llama-get-embeddings (slot-value ctx 'foreign-pointer))))
-    (if #+lispworks (fli:null-pointer-p ptr) #+allegro (zerop ptr) #-(or allegro lispworks) (cffi:null-pointer-p ptr)	
+(defmethod get-embeddings ((ctx ctx))
+  (let ((ptr (llama-get-embeddings (ptr ctx))))
+    (if #+lispworks (fli:null-pointer-p ptr) #+allegro (zerop ptr) #-(or allegro lispworks) (cffi:null-pointer-p ptr)
 	(values nil t)
 	(let ((out (make-array (list (n-embd ctx)) :initial-element 0.0 :element-type 'float)))
 	  (loop for i below (length out)
@@ -208,8 +272,8 @@
 			 #-(or lispworks allegro) (cffi:mem-aref ptr :float i)))
 	  out))))
 
-(defmethod get-logits ((ctx context) &optional (n 1))
-  (let ((ptr (llama-get-logits (slot-value ctx 'foreign-pointer))))
+(defmethod get-logits ((ctx ctx) &optional (n 1))
+  (let ((ptr (llama-get-logits (ptr ctx))))
     (unless #+lispworks (fli:null-pointer-p ptr) #+allegro (zerop ptr) #-(or lispworks allegro) (cffi:null-pointer-p ptr)
 	    (let ((out (make-array (if (= n 1) (list (n-vocab ctx)) (list n (n-vocab ctx)))
 				   :initial-element 0.0 :element-type 'single-float)))
@@ -220,30 +284,25 @@
 			     #-(or lispworks allegro) (cffi:mem-aref ptr :float i)))
 	      out))))
 
-(defmethod get-token ((ctx context) id)
+(defmethod get-token ((ctx ctx) id)
   (ignore-errors 
-   #+lispworks (fli:convert-from-foreign-string (llama-token-to-str (slot-value ctx 'foreign-pointer) id)
-						:external-format :utf-8 )
-   #-lispworks (llama-token-to-str (slot-value ctx 'foreign-pointer) id)))
+   #+lispworks (fli:convert-from-foreign-string (llama-token-get-text (ptr ctx) id)
+						:external-format :utf-8)
+   #-lispworks (llama-token-get-text (ptr ctx) id)))
 
-(defmethod get-vocab ((ctx context))
+(defmethod get-vocab ((ctx ctx))
   (loop for id below (n-vocab ctx) collect (get-token ctx id)))
 
-(defmethod get-vocab-new ((ctx context))
-  (let* ((n (n-vocab ctx))
-	 (scores-ptr #+lispworks (fli:allocate-foreign-object :type :int :nelems n)
-		     #+allegro (ff:allocate-fobject (list :array :int n))
-		     #-(or lispworks allegro) (cffi::foreign-alloc :int :count n))
-	 (strings-ptr #+lispworks (fli:allocate-foreign-object :type :pointer :nelems n)
-		      #+allegro (ff:allocate-fobject (list :array :pointer n))
-		      #-(or lispworks allegro) (cffi::foreign-alloc :pointer :count n)))
-    (llama-get-vocab ctx strings-ptr scores-ptr n)))
+(defmethod token-bos ((ctx ctx))
+  (llama-token-bos (ptr ctx)))
 
-;; ;; direct access:
-;; llama_token_bos
-;; llama_token_eos
+(defmethod token-eos ((ctx ctx))
+  (llama-token-eos (ptr ctx)))
 
-(defmethod sample-repetition-penalty ((ctx context) candidates last-tokens penalty)
+(defmethod token-nl ((ctx ctx))
+  (llama-token-nl (ptr ctx)))
+
+(defmethod sample-repetition-penalty ((ctx ctx) candidates last-tokens penalty)
   (let ((ptr #+lispworks (fli:allocate-foreign-object :type :int :nelems (length last-tokens))
 	     #+allegro (ff:allocate-fobject (list :array :int  (length last-tokens)))
 	     #-(or lispworks allegro) (cffi::foreign-alloc :int :count (length last-tokens))))
@@ -254,13 +313,13 @@
 			  #+allegro (ff:fslot-value ptr i)
 			  #-(or lispworks allegro) (cffi:mem-aref ptr :int i)
 			  (elt last-tokens i)))
-	   (llama-sample-repetition-penalty (slot-value ctx 'foreign-pointer) candidates ptr (length last-tokens)
+	   (llama-sample-repetition-penalty (ptr ctx) candidates ptr (length last-tokens)
 					    (coerce penalty 'single-float)))
       #+lispworks (fli:free ptr)
       ;;#+allegro (ff:free-fobject ptr)
       #-(or lispworks allegro) (cffi:foreign-free ptr))))
 
-(defmethod sample-frequency-and-presence-penalties ((ctx context) candidates last-tokens alpha-frequency alpha-presence)
+(defmethod sample-frequency-and-presence-penalties ((ctx ctx) candidates last-tokens alpha-frequency alpha-presence)
   (let ((ptr #+lispworks (fli:allocate-foreign-object :type :int :nelems (length last-tokens))
 	     #+allegro (ff:allocate-fobject (list :array :int  (length last-tokens)))
 	     #-(or lispworks allegro) (cffi::foreign-alloc :int :count (length last-tokens))))
@@ -271,41 +330,41 @@
 			  #+allegro (ff:fslot-value ptr i)
 			  #-(or lispworks allegro) (cffi:mem-aref ptr :int i)
 			  (elt last-tokens i)))
-	   (llama-sample-frequency-and-presence-penalties (slot-value ctx 'foreign-pointer) candidates ptr (length last-tokens)
+	   (llama-sample-frequency-and-presence-penalties (ptr ctx) candidates ptr (length last-tokens)
 							  (coerce alpha-frequency 'single-float) (coerce alpha-presence 'single-float)))
       #+lispworks (fli:free ptr)
       ;;#+allegro (ff:free-fobject ptr)
       #-(or lispworks allegro) (cffi:foreign-free ptr))))
   
-(defmethod sample-softmax ((ctx context) candidates)
-  (llama-sample-softmax (slot-value ctx 'foreign-pointer) candidates))
+(defmethod sample-softmax ((ctx ctx) candidates)
+  (llama-sample-softmax (ptr ctx) candidates))
 
-(defmethod sample-top-k ((ctx context) candidates top-k &optional (min-keep 1))
-  (llama-sample-top-k (slot-value ctx 'foreign-pointer) candidates top-k min-keep))
+(defmethod sample-top-k ((ctx ctx) candidates top-k &optional (min-keep 1))
+  (llama-sample-top-k (ptr ctx) candidates top-k min-keep))
 
-(defmethod sample-tail-free ((ctx context) candidates tfs-z &optional (min-keep 1))
-  (llama-sample-tail-free (slot-value ctx 'foreign-pointer) candidates tfs-z min-keep))
+(defmethod sample-tail-free ((ctx ctx) candidates tfs-z &optional (min-keep 1))
+  (llama-sample-tail-free (ptr ctx) candidates tfs-z min-keep))
 
-(defmethod sample-typical ((ctx context) candidates typical-p &optional (min-keep 1))
-  (llama-sample-typical (slot-value ctx 'foreign-pointer) candidates (coerce typical-p 'single-float) min-keep))
+(defmethod sample-typical ((ctx ctx) candidates typical-p &optional (min-keep 1))
+  (llama-sample-typical (ptr ctx) candidates (coerce typical-p 'single-float) min-keep))
 
-(defmethod sample-top-p ((ctx context) candidates top-p &optional (min-keep 1))
-  (llama-sample-top-p (slot-value ctx 'foreign-pointer) candidates (coerce top-p 'single-float) min-keep))
+(defmethod sample-top-p ((ctx ctx) candidates top-p &optional (min-keep 1))
+  (llama-sample-top-p (ptr ctx) candidates (coerce top-p 'single-float) min-keep))
 
-(defmethod sample-temperature ((ctx context) candidates temp)
-  (llama-sample-temperature (slot-value ctx 'foreign-pointer) candidates (coerce temp 'single-float)))
+(defmethod sample-temperature ((ctx ctx) candidates temp)
+  (llama-sample-temperature (ptr ctx) candidates (coerce temp 'single-float)))
 
-(defmethod sample-token ((ctx context) candidates)
-  (llama-sample-token (slot-value ctx 'foreign-pointer) candidates))
+(defmethod sample-token ((ctx ctx) candidates)
+  (llama-sample-token (ptr ctx) candidates))
 
-(defmethod sample-token-greedy ((ctx context) candidates)
-  (llama-sample-token-greedy (slot-value ctx 'foreign-pointer) candidates))
+(defmethod sample-token-greedy ((ctx ctx) candidates)
+  (llama-sample-token-greedy (ptr ctx) candidates))
 
-(defmethod print-timings ((ctx context))
-  (llama-print-timings(slot-value ctx 'foreign-pointer)))
+(defmethod print-timings ((ctx ctx))
+  (llama-print-timings(ptr ctx)))
 
-(defmethod reset-timings ((ctx context))
-  (llama-reset-timings (slot-value ctx 'foreign-pointer)))
+(defmethod reset-timings ((ctx ctx))
+  (llama-reset-timings (ptr ctx)))
 
 (defun system-info ()
   #+lispworks (fli:convert-from-foreign-string (llama-print-system-info))

@@ -61,16 +61,14 @@
 		(mirostat *mirostat*) (mirostat-eta *mirostat-eta*) (mirostat-tau *mirostat-tau*)
 		(repeat-last-n *repeat-last-n*) (repeat-penalty *repeat-penalty*)
 		(presence-penalty *presence-penalty*) (frequency-penalty *frequency-penalty*)
-		(penalize-newlines *penalize-newlines*) (add-initial-space t) (add-beginning-of-sentence t))
+		(penalize-newlines *penalize-newlines*) (add-beginning-of-sentence t))
   (assert (<= n-ctx *max-ctx*))
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
   (llama-backend-init numa)
-  (let ((ctx (make-instance 'context :model model :params (context-parameters :n-ctx n-ctx :seed seed
-									      :n-gpu-layers (if metal 1 0))))
-	(embd-inp (make-instance 'tokens :size n-ctx)))
-    (when add-initial-space
-      ;; // Add a space in front of the first character to match OG llama tokenizer behavior      
-      (setf prompt (concatenate 'string " " prompt)))
+  (let* ((mdl (make-instance 'mdl :file model))
+	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed
+									 :n-gpu-layers (if metal 1 0))))
+	 (embd-inp (make-instance 'tokens :size n-ctx)))
     ;; // tokenize the prompt    
     (tokenize ctx embd-inp prompt :add-beginning-of-sentence add-beginning-of-sentence)
     (when (> (n embd-inp) (- n-ctx 4))
@@ -98,7 +96,7 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 	  with embd = (make-instance 'tokens :size *max-ctx*)
 	  with id = 0
 	  while (plusp n-remain)
-	  ;; // predict	  
+	  ;; // predict
 	  do (when (plusp (n embd))
 	       ;; // infinite text generation via context swapping
 	       ;; // if we run out of context:
@@ -147,13 +145,13 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 		     (init-candidates candidates logits)
 		     (init-candidates-p candidates-p candidates n-vocab)
                      ;; // Apply penalties
-		     (let ((newline-logit (elt logits (llama-token-nl)))
+		     (let ((newline-logit (elt logits (token-nl ctx)))
 			   (last-n-tokens (subseq (cb-content last-tokens)
 						  (max 0 (- (cb-length last-tokens) repeat-last-n)))))
                        (when (plusp (length last-n-tokens))
 			 (sample-repetition-penalty ctx candidates-p last-n-tokens repeat-penalty)
 			 (sample-frequency-and-presence-penalties ctx candidates-p last-n-tokens frequency-penalty presence-penalty)
-			 (unless penalize-newlines (setf (elt logits (llama-token-nl)) newline-logit))))
+			 (unless penalize-newlines (setf (elt logits (token-nl ctx)) newline-logit))))
 		     (setf id (if (< temp 0) ;; // Greedy sampling
 				  (sample-token-greedy ctx candidates-p)
 				  (ecase mirostat
@@ -184,7 +182,7 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 	     ;; // display text
 	     (when (plusp id) (format stream "~A" (get-token ctx id)))
 	     ;; // end of text token
-	     (when (equal id (llama-token-eos))
+	     (when (equal id (token-eos ctx))
 	       (format stream " [end of text]~&")
 	       (setf n-remain 0)))
     (if (>= verbose 3) (print-timings ctx))))

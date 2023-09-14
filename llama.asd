@@ -9,9 +9,9 @@
     :depends-on (:trivial-garbage #-(or lispworks allegro) :cffi #-(or lispworks allegro) :cffi-libffi)
     :serial t
     :components ((:file "package")
+		 (:file "wrapper")
 		 (:file "circular-buffer")
 		 (:file "defaults")
-		 (:file "wrapper")
 		 (:file "embedding")
 		 (:file "perplexity")		 
 		 (:file "llama")))

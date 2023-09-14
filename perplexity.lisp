@@ -8,14 +8,12 @@
   (normalize (loop with maxlogit = (loop for x in logits maximize x)
 		   for x in logits collect (exp (* 1d0 (- x maxlogit))))))
 
-(defun %perplexity (ctx tokens txt verbose add-initial-space add-beginning-of-sentence threads)
-  (when add-initial-space
-    (setf txt (concatenate 'string " " txt)))
+(defun %perplexity (ctx tokens txt verbose add-beginning-of-sentence threads)
   (tokenize ctx tokens txt :add-beginning-of-sentence add-beginning-of-sentence)
   (let ((nsegments (floor (n tokens) (n-ctx ctx)))) ;; do blocks of size n-ctx
     (when (plusp nsegments)
       (loop for segment below nsegments
-	    for tok = (subset tokens (* (n-ctx ctx) segment) (n-ctx ctx) :change-first-to-bos t)
+	    for tok = (subset tokens (* (n-ctx ctx) segment) (n-ctx ctx) :change-first-to-bos ctx)
 	    with count = 0
 	    with nll = 0
 	    do (when (> verbose 2) (print (list-tokens tok :limit 5)))
@@ -34,7 +32,7 @@
 	    finally (return (coerce (exp (/ nll count)) 'single-float))))))
 
 (defun perplexity (text &key (model *model*) (n-ctx *n-ctx*) (verbose 0) (numa *numa*)
-			  (add-initial-space nil) (add-beginning-of-sentence t) (threads *threads*))
+			  (add-beginning-of-sentence t) (threads *threads*) (metal *metal*))
   "Calculate perplexity as done in llama.cpp/examples/perplexity
 Full blocks of length n-ctx are used (returns nil if there is not even one full block).
 and the first half (or 512 tokens if larger than 1024) is discarded.
@@ -49,16 +47,28 @@ If <text> is a pathname the contents of the file are used."
 			 (adjust-array contents (list (1- (length contents))))
 			 contents)))))
   (llama-backend-init numa)
-  (let* ((ctx (make-instance 'context :model model
-				      :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx)))
+  (let* ((mdl (make-instance 'mdl :file model
+			     	  :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx
+							      :n-gpu-layers (if metal 1 0))))
+	 (ctx (make-instance 'ctx :model mdl
+				  :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx
+							      :n-gpu-layers (if metal 1 0))))
 	 (tokens (make-instance 'tokens :size (length text))))
-    (prog1 
-	(%perplexity ctx tokens text verbose add-initial-space add-beginning-of-sentence threads)
+    (prog1
+	(%perplexity ctx tokens text verbose add-beginning-of-sentence threads)
       (when (> verbose 1) (print-timings ctx)))))
 
-;; ./perplexity  -f ~/wikitext-2-raw/wiki.test.raw
-;; [1]4.2333,[2]4.7093,[3]5.5769,[4]6.1806,....
+;; ./perplexity  -f ~/wikitext-2-raw/wiki.test.raw -ngl 1
+;; [1]4.2343,[2]4.7119,[3]5.5786,[4]6.1821
 
-;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1)
-;; [1]4.2333 [2]4.7093 [3]5.5769 [4]6.1806
+;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1 :metal t)
+;; [1]4.2343 [2]4.7119 [3]5.5786 [4]6.1821 
+
+;; ./perplexity  -f ~/wikitext-2-raw/wiki.test.raw -ngl 0
+;; [1]4.2344,[2]4.7123,[3]5.5789,[4]6.1824
+
+;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1 :metal nil)
+;; [1]4.2344 [2]4.7123 [3]5.5789 [4]6.1824 
+
+
 
