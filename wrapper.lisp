@@ -254,7 +254,7 @@
 	    text :add-beginning-of-sentence add-beginning-of-sentence))
 
 (defmethod tokenize ((ctx ctx) (tok tokens) text &key add-beginning-of-sentence)
-  (let ((res (llama-tokenize (ptr ctx) text
+  (let ((res (llama-tokenize (ptr ctx) text (length text)
 			     (ptr tok) (size tok) add-beginning-of-sentence)))
     (when (minusp res) (error "returned ~D, more than buffer size ~D" (- res) (size tok)))
     (setf (n tok) res)

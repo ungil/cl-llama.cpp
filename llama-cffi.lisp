@@ -263,6 +263,7 @@
 (cffi:defcfun llama-tokenize :int
   (ctx (:pointer (:struct llama-context)))
   (text :string)
+  (text-len :int)  
   (tokens (:pointer llama-token))
   (n-max-tokens :int)
   (add-bos :bool))
@@ -270,6 +271,7 @@
 (cffi:defcfun llama-tokenize-with-model :int
   (model (:pointer (:struct llama-model)))
   (text :string)
+  (text-len :int)  
   (tokens (:pointer llama-token))
   (n-max-tokens :int)
   (add-bos :bool))
