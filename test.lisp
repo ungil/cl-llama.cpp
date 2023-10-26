@@ -42,35 +42,35 @@
   (5am:is (= 16 (+ (token-bos *ctx*) (token-eos *ctx*) (token-nl *ctx*)))))
 
 (5am:test n-vocab :depends-on 'create-context
-  (5am:is (eq 32000 (n-vocab *ctx*))))
+  (5am:is (eq 32000 (n-vocab *mdl*))))
 
 (5am:test n-ctx :depends-on 'create-context
   (5am:is (eq 512 (n-ctx *ctx*))))
 
 (5am:test n-embd :depends-on 'create-context
-  (5am:is (eq 4096 (n-embd *ctx*))))
+  (5am:is (eq 4096 (n-embd *mdl*))))
 
 (5am:test vocab :depends-on 'create-context
   (5am:is (eq 32000 (length (get-vocab *ctx*)))))
 
 (5am:test tokenize-error :depends-on 'create-context
-  (5am:signals simple-error (tokenize *ctx* 10 "The quick brown fox jumps over the lazy dog")))
+  (5am:signals simple-error (tokenize *mdl* 10 "The quick brown fox jumps over the lazy dog")))
 
 (5am:test tokenize-success :depends-on 'create-context
-  (5am:is (= 11 (llama::n (tokenize *ctx* 20 "The quick brown fox jumps over the lazy dog")))))
+  (5am:is (= 11 (llama::n (tokenize *mdl* 20 "The quick brown fox jumps over the lazy dog")))))
 
 (5am:test tokenize-id :depends-on 'create-context
   (5am:is (equal '(15043)
-		 (list-tokens (tokenize *ctx* 1 "Hello")))))
+		 (list-tokens (tokenize *mdl* 1 "Hello")))))
 
 (5am:test tokenize-str :depends-on 'create-context
   (5am:is (equalp '("▁Investig" "ation")
-		  (list-tokens (tokenize *ctx* 10 "Investigation") :context *ctx*))))
+		  (list-tokens (tokenize *mdl* 10 "Investigation") :context *ctx*))))
 
 (5am:test embedding
   (5am:is (equalp (if *metal*
 		      #(1.3826334 -1.6712512 0.81991553)		      
-		      #+(or ARM ARM64) #(1.3875245 -1.680799 0.8155995)
+		      #+(or ARM ARM64) #(1.3917959 -1.6723749 0.8140562)
 		      #-(or ARM ARM64) #(1.3847897 -1.6708059 0.8206482))
 		  (subseq (embedding "testing") 0 3))))
 
@@ -79,11 +79,11 @@
 		      '(#(1.3826334 -1.6712512 0.81991553)
 			#(-2.4520674 1.4927745 -2.1975682)
 			#(1.3826334 -1.6712512 0.81991553))		      
-		      #+(or ARM ARM64) '(#(1.3875245 -1.680799 0.8155995)
-					 #(-2.4507275 1.4947473 -2.1964972)
-					 #(1.3875245 -1.680799 0.8155995))
+		      #+(or ARM ARM64) '(#(1.3917959 -1.6723749 0.8140562)
+					 #(-2.443811 1.4967367 -2.1949144)
+					 #(1.3917959 -1.6723749 0.8140562))
 		      #-(or ARM ARM64) '(#(1.3847897 -1.6708059 0.8206482)
-					 #(-2.449414 1.4928144 -2.1969934)
+					 #(-2.449856 1.492255 -2.1966687)
 					 #(1.3847897 -1.6708059 0.8206482)))
 		  (mapcar (lambda (x) (subseq x 0 3)) (embedding '("testing" "something else" "testing"))))))
 

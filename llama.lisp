@@ -65,12 +65,11 @@
   (assert (<= n-ctx *max-ctx*))
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
   (llama-backend-init numa)
-  (let* ((mdl (make-instance 'mdl :file model))
-	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed
-									 :n-gpu-layers (if metal 1 0))))
+  (let* ((mdl (make-instance 'mdl :file model :params (model-parameters :n-gpu-layers (if metal 1 0))))
+	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed)))
 	 (embd-inp (make-instance 'tokens :size n-ctx)))
     ;; // tokenize the prompt    
-    (tokenize ctx embd-inp prompt :add-beginning-of-sentence add-beginning-of-sentence)
+    (tokenize mdl embd-inp prompt :add-beginning-of-sentence add-beginning-of-sentence)
     (when (> (n embd-inp) (- n-ctx 4))
       (error "prompt too long (~D tokens, max ~D)" (n embd-inp) (- n-ctx 4)))
     ;; // number of tokens to keep when resetting context
@@ -149,18 +148,17 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 			   (last-n-tokens (subseq (cb-content last-tokens)
 						  (max 0 (- (cb-length last-tokens) repeat-last-n)))))
                        (when (plusp (length last-n-tokens))
-			 (sample-repetition-penalty ctx candidates-p last-n-tokens repeat-penalty)
-			 (sample-frequency-and-presence-penalties ctx candidates-p last-n-tokens frequency-penalty presence-penalty)
+			 (sample-repetition-penalties ctx candidates-p last-n-tokens repeat-penalty frequency-penalty presence-penalty)
 			 (unless penalize-newlines (setf (elt logits (token-nl ctx)) newline-logit))))
 		     (setf id (if (< temp 0) ;; // Greedy sampling
 				  (sample-token-greedy ctx candidates-p)
 				  (ecase mirostat
 				    (1 (let ((mirostat-mu (* 2.0 mirostat-tau))
 					     (mirostat-m 100))
-					 (llama-sample-temperature ctx candidates-p temp)
+					 (llama-sample-temp ctx candidates-p temp)
 					 (llama-sample-token-mirostat ctx candidates-p mirostat-tau mirostat-eta mirostat-m mirostat-mu)))
 				    (2 (let ((mirostat-mu (* 2.0 mirostat-tau)))
-					 (llama-sample-temperature ctx candidates-p temp)
+					 (llama-sample-temp ctx candidates-p temp)
 					 (llama-sample-token-mirostat-v2 ctx candidates-p mirostat-tau mirostat-eta mirostat-mu)))
 				    (0 ;; // Temperature sampling
 				     (sample-top-k ctx candidates-p top-k)

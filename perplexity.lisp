@@ -9,7 +9,7 @@
 		   for x in logits collect (exp (* 1d0 (- x maxlogit))))))
 
 (defun %perplexity (ctx tokens txt verbose add-beginning-of-sentence threads)
-  (tokenize ctx tokens txt :add-beginning-of-sentence add-beginning-of-sentence)
+  (tokenize (model ctx) tokens txt :add-beginning-of-sentence add-beginning-of-sentence)
   (let ((nsegments (floor (n tokens) (n-ctx ctx)))) ;; do blocks of size n-ctx
     (when (plusp nsegments)
       (loop for segment below nsegments
@@ -48,11 +48,9 @@ If <text> is a pathname the contents of the file are used."
 			 contents)))))
   (llama-backend-init numa)
   (let* ((mdl (make-instance 'mdl :file model
-			     	  :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx
-							      :n-gpu-layers (if metal 1 0))))
+				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
 	 (ctx (make-instance 'ctx :model mdl
-				  :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx
-							      :n-gpu-layers (if metal 1 0))))
+				  :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size (length text))))
     (prog1
 	(%perplexity ctx tokens text verbose add-beginning-of-sentence threads)

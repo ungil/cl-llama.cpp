@@ -4,7 +4,11 @@
 
 (fli:define-c-struct (llama-context (:foreign-name "llama_context")))
 
+(fli:define-c-typedef (llama-pos (:foreign-name "llama_pos")) :int)
+
 (fli:define-c-typedef (llama-token (:foreign-name "llama_token")) :int)
+
+(fli:define-c-typedef (llama-seq-id (:foreign-name "llama_seq_id")) :int)
 
 ;; llama_log_level
 
@@ -33,24 +37,29 @@
 (fli:define-c-typedef (llama-progress-callback (:foreign-name "llama_progress_callback"))
     (:pointer (:function (:float (:pointer :void)) :void)))
 
+;; (fli:define-c-struct (llama-batch (:foreign-name "llama_batch"))
+
+(fli:define-c-struct (llama-model-params (:foreign-name "llama_model_params"))
+  (n-gpu-layers :int)
+  (main-gpu :int)
+  (tensor-split (:pointer :float))
+  (progress-callback llama-progress-callback)
+  (progress-callback-user-data (:pointer :void))
+  (vocab-only (:boolean :byte))
+  (use-mmap (:boolean :byte))
+  (use-mlock (:boolean :byte)))
+
 (fli:define-c-struct (llama-context-params (:foreign-name "llama_context_params"))
     (seed :int)
   (n-ctx :int)
   (n-batch :int)
-  (n-gpu-layers :int)
-  (main-gpu :int)
-  (tensor-split (:pointer :float))
+  (n-threads :int)
+  (n-threads-batch :int)
   (rope-freq-base :float)
   (rope-freq-scale :float)
-  (progress-callback llama-progress-callback)
-  (progress-callback-user-data (:pointer :void))
-  (low-vram (:boolean :byte))
   (mul-mat (:boolean :byte))
   (f16-kv (:boolean :byte))
   (logits-all (:boolean :byte))
-  (vocab-only (:boolean :byte))
-  (use-mmap (:boolean :byte))
-  (use-mlock (:boolean :byte))
   (embedding (:boolean :byte)))
 
 ;; llama_log_callback
@@ -76,6 +85,10 @@
   (n-p-eval :int)
   (n-eval :int))
 
+(fli:define-foreign-function (llama-model-default-params "llama_model_default_params")
+  nil
+  :result-type (:struct llama-model-params))
+
 (fli:define-foreign-function (llama-context-default-params "llama_context_default_params")  
   nil
   :result-type (:struct llama-context-params))
@@ -92,7 +105,7 @@
 
 (fli:define-foreign-function (llama-load-model-from-file "llama_load_model_from_file")
     ((path-model (:reference-pass :ef-mb-string))
-     (params (:struct llama-context-params)))
+     (params (:struct llama-model-params)))
   :result-type (:pointer (:struct llama-model)))
 
 (fli:define-foreign-function (llama-free-model "llama_free_model")
@@ -130,41 +143,31 @@
   nil
   :result-type (:boolean :byte))
 
-(fli:define-foreign-function (llama-n-vocab "llama_n_vocab")
-    ((ctx (:pointer (:struct llama-context))))
-  :result-type :int)
+(fli:define-foreign-function (llama-get-model "llama_get_model")
+     ((ctx (:pointer (:struct llama-context))))
+  :result-type (:pointer (:struct llama-model)))
 
 (fli:define-foreign-function (llama-n-ctx "llama_n_ctx")
     ((ctx (:pointer (:struct llama-context))))
   :result-type :int)
 
+(fli:define-foreign-function (llama-vocab-type "llama_vocab_type")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
+
+(fli:define-foreign-function (llama-n-vocab "llama_n_vocab")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
+
 (fli:define-foreign-function (llama-n-ctx-train "llama_n_ctx_train")
-    ((ctx (:pointer (:struct llama-context))))
+    ((model (:pointer (:struct llama-model))))
   :result-type :int)
 
 (fli:define-foreign-function (llama-n-embd "llama_n_embd")
-    ((ctx (:pointer (:struct llama-context))))
-  :result-type :int)
-
-(fli:define-foreign-function (llama-vocab-type "llama_vocab_type")
-    ((ctx (:pointer (:struct llama-context))))
-  :result-type :int)
-
-(fli:define-foreign-function (llama-model-n-vocab "llama_model_n_vocab")
     ((model (:pointer (:struct llama-model))))
   :result-type :int)
 
-(fli:define-foreign-function (llama-model-n-ctx "llama_model_n_ctx")
-    ((model (:pointer (:struct llama-model))))
-  :result-type :int)
-
-(fli:define-foreign-function (llama-model-n-ctx-train "llama_model_n_ctx_train")
-    ((model (:pointer (:struct llama-model))))
-  :result-type :int)
-
-(fli:define-foreign-function (llama-model-n-embd "llama_model_n_embd")
-    ((model (:pointer (:struct llama-model))))
-  :result-type :int)
+;; llama_rope_freq_scale_train
 
 (fli:define-foreign-function (llama-model-desc "llama_model_desc")
     ((model (:pointer (:struct llama-model)))
@@ -180,12 +183,15 @@
     ((model (:pointer (:struct llama-model))))
   :result-type :unsigned-long)
 
+;; llama_get_model_tensor
+
 ;; llama_model_quantize
 
 ;; ;; DEPRECATED
 ;; (fli:define-foreign-function (llama-apply-lora-from-file "llama_apply_lora_from_file")
 ;;     ((ctx (:pointer (:struct llama-context)))
 ;;      (path-lora (:reference-pass :ef-mb-string))
+;;      (scale :float)
 ;;      (path-base-model (:reference-pass :ef-mb-string))
 ;;      (n-threads :int))
 ;;   :result-type :int)
@@ -197,14 +203,16 @@
      (n-threads :int))
   :result-type :int)
 
-(fli:define-foreign-function (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
-    ((ctx (:pointer (:struct llama-context))))
-  :result-type :int)
+;; ;; DEPRECATED
+;; (fli:define-foreign-function (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
+;;     ((ctx (:pointer (:struct llama-context))))
+;;   :result-type :int)
 
-(fli:define-foreign-function (llama-set-rng-seed "llama_set_rng_seed")
-    ((ctx (:pointer (:struct llama-context)))
-     (seed :int))
-  :result-type :void)
+;; llama_kv_cache_tokens_rm
+;; llama_kv_cache_seq_rm
+;; llama_kv_cache_seq_cp
+;; llama_kv_cache_seq_keep
+;; llama_kv_cache_seq_shift
 
 (fli:define-foreign-function (llama-get-state-size "llama_get_state_size")
     ((ctx (:pointer (:struct llama-context))))
@@ -218,6 +226,7 @@
 
 ;; llama_save_session_file
 
+;; DEPRECATED - use llama_decode
 (fli:define-foreign-function (llama-eval "llama_eval")
     ((ctx (:pointer (:struct llama-context)))
      (tokens (:pointer (:const llama-token)))
@@ -226,6 +235,7 @@
      (n-threads :int))
   :result-type :int)
 
+;; DEPRECATED - use llama_decode
 (fli:define-foreign-function (llama-eval-emdb "llama_eval_embd")
     ((ctx (:pointer (:struct llama-context)))
      (embd (:pointer :float))
@@ -234,73 +244,80 @@
      (n-threads :int))
   :result-type :int)
 
-;; // IMPORTANT: do not use for anything else other than debugging and testing!
-;; (fli:define-foreign-function (llama-eval-export "llama_eval_export")
-;;     ((ctx (:pointer (:struct llama-context)))
-;;      (fname (:pointer (:const :char))))
-;;   :result-type :int)
+;; llama_batch_get_one
+
+;; llama_batch_init
+
+;; llama_batch_free
+
+;; llama_decode
+
+;; llama_set_n_threads
 
 (fli:define-foreign-function (llama-get-logits "llama_get_logits")
     ((ctx (:pointer (:struct llama-context))))
   :result-type (:pointer :float))
+
+;; llama_get_logits_ith
 
 (fli:define-foreign-function (llama-get-embeddings "llama_get_embeddings")
     ((ctx (:pointer (:struct llama-context))))
   :result-type (:pointer :float))
 
 (fli:define-foreign-function (llama-token-get-text "llama_token_get_text")
-   ((ctx (:pointer (:struct llama-context)))
+   ((model (:pointer (:struct llama-model)))
     (token llama-token))
   :result-type (:pointer (:const :char)))
 
 (fli:define-foreign-function (llama-token-get-score "llama_token_get_score")
-   ((ctx (:pointer (:struct llama-context)))
+   ((model (:pointer (:struct llama-model)))
     (token llama-token))
   :result-type :float)
 
 (fli:define-foreign-function (llama-token-get-type "llama_token_get_type")
-   ((ctx (:pointer (:struct llama-context)))
+   ((model (:pointer (:struct llama-model)))
     (token llama-token))
   :result-type :int)
 
 (fli:define-foreign-function (llama-token-bos "llama_token_bos")
-    ((ctx (:pointer (:struct llama-context))))
+    ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
 (fli:define-foreign-function (llama-token-eos "llama_token_eos")
-     ((ctx (:pointer (:struct llama-context))))
+     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
 (fli:define-foreign-function (llama-token-nl "llama_token_nl")
-    ((ctx (:pointer (:struct llama-context))))
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
+(fli:define-foreign-function (llama-token-prefix "llama_token_prefix")
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
+(fli:define-foreign-function (llama-token-middle "llama_token_middle")
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
+(fli:define-foreign-function (llama-token-suffix "llama_token_suffix")
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
+(fli:define-foreign-function (llama-token-eot "llama_token_eot")
+    ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
 (fli:define-foreign-function (llama-tokenize "llama_tokenize")
-    ((ctx (:pointer (:struct llama-context)))
-     (text (:reference-pass (:ef-mb-string :external-format :utf-8)))
-     (text-len :int)     
-     (tokens (:pointer llama-token))
-     (n-max-tokens :int)
-     (add-bos (:boolean :byte)))
-  :result-type :int)
-
-(fli:define-foreign-function (llama-tokenize-with-model "llama_tokenize_with_model")
     ((model (:pointer (:struct llama-model)))
      (text (:reference-pass (:ef-mb-string :external-format :utf-8)))
      (text-len :int)     
      (tokens (:pointer llama-token))
      (n-max-tokens :int)
-     (add-bos (:boolean :byte)))
+     (add-bos (:boolean :byte))
+     (special (:boolean :byte)))
   :result-type :int)
 
 (fli:define-foreign-function (llama-token-to-piece "llama_token_to_piece")
-    ((ctx (:pointer (:struct llama-context)))
-     (token llama-token)
-     (buf (:pointer :char))
-     (length :int))
-  :result-type :int)
-
-(fli:define-foreign-function (llama-token-to-piece-with-model "llama_token_to_piece_with_model")
     ((model (:pointer (:struct llama-model)))
      (token llama-token)
      (buf (:pointer :char))
@@ -321,23 +338,19 @@
     ((grammar (:pointer (:struct llama-grammar))))
   :result-type (:pointer (:struct llama-grammar)))
 
-(fli:define-foreign-function (llama-sample-repetition-penalty "llama_sample_repetition_penalty")
+(fli:define-foreign-function (llama-set-rng-seed "llama_set_rng_seed")
     ((ctx (:pointer (:struct llama-context)))
-     (candidates
-      (:pointer llama-token-data-array))
-     (last-tokens
-      (:pointer (:const llama-token)))
-     (last-tokens-size :unsigned-long)
-     (penalty :float))
+     (seed :int))
   :result-type :void)
 
-(fli:define-foreign-function (llama-sample-frequency-and-presence-penalties "llama_sample_frequency_and_presence_penalties")
+(fli:define-foreign-function (llama-sample-repetition-penalties "llama_sample_repetition_penalties")
     ((ctx (:pointer (:struct llama-context)))
      (candidates (:pointer llama-token-data-array))
      (last-tokens (:pointer (:const llama-token)))
-     (last-tokens-size :unsigned-long)
-     (alpha-frequency :float)
-     (alpha-presence :float))
+     (penalty-last-n :unsigned-long)
+     (penalty-repeat :float)
+     (penalty-freq :float)
+     (penalty-present :float))
   :result-type :void)
 
 (fli:define-foreign-function (llama-sample-classifier-free-guidance "llama_sample_classifier_free_guidance")
@@ -380,11 +393,18 @@
      (min-keep :unsigned-long))
   :result-type :void)
 
-(fli:define-foreign-function (llama-sample-temperature "llama_sample_temperature")
+(fli:define-foreign-function (llama-sample-temp "llama_sample_temp")
     ((ctx (:pointer (:struct llama-context)))
      (candidates (:pointer llama-token-data-array))
      (temp :float))
   :result-type :void)
+
+;; ;; DEPRECATED
+;; (fli:define-foreign-function (llama-sample-temperature "llama_sample_temperature")
+;;     ((ctx (:pointer (:struct llama-context)))
+;;      (candidates (:pointer llama-token-data-array))
+;;      (temp :float))
+;;   :result-type :void)
 
 (fli:define-foreign-function (llama-sample-grammar "llama_sample_grammar")
     ((ctx (:pointer (:struct llama-context)))

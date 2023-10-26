@@ -4,7 +4,11 @@
 
 (ff:def-foreign-type llama-context (* :void))
 
+(ff:def-foreign-type llama-pos :int)
+
 (ff:def-foreign-type llama-token :int)
+
+(ff:def-foreign-type llama-seq-id :int)
 
 ;; llama_log_level
 
@@ -26,24 +30,29 @@
 
 (ff:def-foreign-type llama-progress-callback (* :void))
 
+;; (ff:def-foreign-type llama-batch
+
+(ff:def-foreign-type llama-model-params
+    (:struct (n-gpu-layers :int)
+	     (main-gpu :int)
+	     (tensor-split (* :float))
+	     (progress-callback (* :void))
+	     (progress-callback-user-data (* :void))
+	     (vocab-only :char boolean)
+	     (use-mmap :char boolean)
+	     (use-mlock :char boolean)))
+
 (ff:def-foreign-type llama-context-params
     (:struct (seed :int)
 	     (n-ctx :int)
 	     (n-batch :int)
-	     (n-gpu-layers :int)
-	     (main-gpu :int)
-	     (tensor-split (* :float))
+	     (n-threads :int)
+	     (n-threads-batch :int)
 	     (rope-freq-base :float)
 	     (rope-freq-scale :float)
-	     (progress-callback (* :void))
-	     (progress-callback-user-data (* :void))
-	     (low-vram :char boolean)
 	     (mul-mat :char boolean)
 	     (f16-kv :char boolean)
 	     (logits-all :char boolean)
-	     (vocab-only :char boolean)
-	     (use-mmap :char boolean)
-	     (use-mlock :char boolean)
 	     (embedding :char boolean)))
 
 ;; llama_log_callback
@@ -69,6 +78,11 @@
 	     (n-p-eval :int)
 	     (n-eval :int)))
 
+(ff:def-foreign-call (llama-model-default-params "llama_model_default_params")
+    (:void)
+  :returning llama-model-params
+  :pass-structs-by-value t)
+
 (ff:def-foreign-call (llama-context-default-params "llama_context_default_params")
     (:void)
   :returning llama-context-params
@@ -86,7 +100,7 @@
 
 (ff:def-foreign-call (llama-load-model-from-file "llama_load_model_from_file")
     ((path-model (* :char))
-     (params (* llama-context-params)))
+     (params (* llama-model-params)))
   :returning llama-model)
 
 (ff:def-foreign-call (llama-free-model "llama_free_model")
@@ -124,37 +138,31 @@
     (:void)
   :returning :boolean)
 
-(ff:def-foreign-call (llama-n-vocab "llama_n_vocab")
+(ff:def-foreign-call (llama-get-model "llama_get_model")
     ((ctx (* llama-context)))
-  :returning :int)
+  :returning llama-model)
 
 (ff:def-foreign-call (llama-n-ctx "llama_n_ctx")
     ((ctx (* llama-context)))
   :returning :int)
 
+(ff:def-foreign-call (llama-vocab-type "llama_vocab_type")
+    ((ctx (* llama-model)))
+  :returning :int)
+
+(ff:def-foreign-call (llama-n-vocab "llama_n_vocab")
+    ((model (* llama-model)))
+  :returning :int)
+
 (ff:def-foreign-call (llama-n-ctx-train "llama_n_ctx_train")
-    ((ctx (* llama-context)))
+    ((model (* llama-model)))
   :returning :int)
 
 (ff:def-foreign-call (llama-n-embd "llama_n_embd")
-    ((ctx (* llama-context)))
-  :returning :int)
-
-(ff:def-foreign-call (llama-model-n-vocab "llama_model_n_vocab")
     ((model (* llama-model)))
   :returning :int)
 
-(ff:def-foreign-call (llama-model-n-ctx "llama_model_n_ctx")
-    ((model (* llama-model)))
-  :returning :int)
-
-(ff:def-foreign-call (llama-model-n-ctx-train "llama_model_n_ctx_train")
-    ((model (* llama-model)))
-  :returning :int)
-
-(ff:def-foreign-call (llama-model-n-embd "llama_model_n_embd")
-    ((model (* llama-model)))
-  :returning :int)
+;; llama_rope_freq_scale_train
 
 (ff:def-foreign-call (llama-model-desc "llama_model_desc")
     ((model (* llama-model))
@@ -162,7 +170,7 @@
      (buf-size :unsigned-long))
   :returning :int)
 
-(ff:def-foreign-call (llama-model-n-embd "llama_model_size")
+(ff:def-foreign-call (llama-model-size "llama_model_size")
     ((model (* llama-model)))
   :returning :unsigned-long)
 
@@ -170,12 +178,15 @@
     ((model (* llama-model)))
   :returning :unsigned-long)
 
+;; llama_get_model_tensor
+
 ;; llama_model_quantize
 
 ;; ;; DEPRECATED
 ;; (ff:def-foreign-call (llama-apply-lora-from-file "llama_apply_lora_from_file")
 ;;     ((ctx (* llama-context))
 ;;      (path-lora (* :char))
+;;      (scale :float)
 ;;      (path-base-model (* :char))
 ;;      (n-threads :int))
 ;;   :returning :int)
@@ -187,14 +198,16 @@
      (n-threads :int))
   :returning :int)
 
-(ff:def-foreign-call (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
-    ((ctx (* llama-context)))
-  :returning :int)
+;; ;; DEPRECATED
+;; (ff:def-foreign-call (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
+;;     ((ctx (* llama-context)))
+;;   :returning :int)
 
-(ff:def-foreign-call (llama-set-rng-seed "llama_set_rng_seed")
-    ((ctx (* llama-context))
-     (seed :int))
-  :returning :void)
+;; llama_kv_cache_tokens_rm
+;; llama_kv_cache_seq_rm
+;; llama_kv_cache_seq_cp
+;; llama_kv_cache_seq_keep
+;; llama_kv_cache_seq_shift
 
 (ff:def-foreign-call (llama-get-state-size "llama_get_state_size")
     ((ctx (* llama-context)))
@@ -208,6 +221,7 @@
 
 ;; llama_save_session_file
 
+;; DEPRECATED - use llama_decode
 (ff:def-foreign-call (llama-eval "llama_eval")
     ((ctx (* llama-context))
      (tokens (* llama-token))
@@ -216,6 +230,7 @@
      (n-threads :int))
   :returning :int)
 
+;; DEPRECATED - use llama_decode
 (ff:def-foreign-call (llama-eval-embd "llama_eval_embd")
     ((ctx (* llama-context))
      (embd (* :float))
@@ -224,69 +239,80 @@
      (n-threads :int))
   :returning :int)
 
-;; llama_eval_export
+;; llama_batch_get_one
+
+;; llama_batch_init
+
+;; llama_batch_free
+
+;; llama_decode
+
+;; llama_set_n_threads
 
 (ff:def-foreign-call (llama-get-logits "llama_get_logits")
     ((ctx (* llama-context)))
   :returning ((* :float)))
+
+;; llama_get_logits_ith
 
 (ff:def-foreign-call (llama-get-embeddings "llama_get_embeddings")
     ((ctx (* llama-context)))
   :returning ((* :float)))
 
 (ff:def-foreign-call (llama-token-get-text "llama_token_get_text")
-    ((ctx (* llama-context))
+    ((model(* llama-model))
      (token llama-token))
   :returning ((* :char)))
 
 (ff:def-foreign-call (llama-token-get-score "llama_token_get_score")
-    ((ctx (* llama-context))
+    ((model(* llama-model))
      (token llama-token))
   :returning :float)
 
 (ff:def-foreign-call (llama-token-get-type "llama_token_get_type")
-    ((ctx (* llama-context))
+    ((model (* llama-model))
      (token llama-token))
   :returning :int)
 
 (ff:def-foreign-call (llama-token-bos "llama_token_bos")
-    ((ctx (* llama-context)))
+    ((model (* llama-model)))
   :returning llama-token)
 
 (ff:def-foreign-call (llama-token-eos "llama_token_eos")
-    ((ctx (* llama-context)))
+    ((model (* llama-model)))
   :returning llama-token)
 
 (ff:def-foreign-call (llama-token-nl "llama_token_nl")
-    ((ctx (* llama-context)))
+    ((model (* llama-model)))
+  :returning llama-token)
+
+(ff:def-foreign-call (llama-token-prefix "llama_token_prefix")
+    ((model (* llama-model)))
+  :returning llama-token)
+
+(ff:def-foreign-call (llama-token-middle "llama_token_middle")
+    ((model (* llama-model)))
+  :returning llama-token)
+
+(ff:def-foreign-call (llama-token-suffix "llama_token_suffix")
+    ((model (* llama-model)))
+  :returning llama-token)
+
+(ff:def-foreign-call (llama-token-eot "llama_token_eot")
+    ((model (* llama-model)))
   :returning llama-token)
 
 (ff:def-foreign-call (llama-tokenize "llama_tokenize")
-    ((ctx (* llama-context))
-     (text (* :char))
-     (text-len :int)
-     (tokens (* llama-token))
-     (n-max-tokens :int)
-     (add-bos :int boolean))
-  :returning :int)
-
-(ff:def-foreign-call (llama-tokenize-with-model "llama_tokenize_with_model")
     ((model (* llama-model))
      (text (* :char))
      (text-len :int)     
      (tokens (* llama-token))
      (n-max-tokens :int)
-     (add-bos :int boolean))
+     (add-bos :int boolean)
+     (special :int boolean))
   :returning :int)
 
 (ff:def-foreign-call (llama-token-to-piece "llama_token_to_piece")
-    ((ctx (* llama-context))
-     (token llama-token)
-     (buf (* :char))
-     (length :int))
-  :returning :int)
-
-(ff:def-foreign-call (llama-token-to-piece-with-model "llama_token_to_piece_with_model")
     ((model (* llama-model))
      (token llama-token)
      (buf (* :char))
@@ -307,21 +333,19 @@
     ((grammar (* llama-grammar)))
   :returning ((* llama-grammar)))
 
-(ff:def-foreign-call (llama-sample-repetition-penalty "llama_sample_repetition_penalty")
+(ff:def-foreign-call (llama-set-rng-seed "llama_set_rng_seed")
     ((ctx (* llama-context))
-     (candidates (* llama-token-data-array))
-     (last_tokens (* llama-token))
-     (last-tokens-size :unsigned-long)
-     (penalty :float))
+     (seed :int))
   :returning :void)
 
-(ff:def-foreign-call (llama-sample-frequency-and-presence-penalties "llama_sample_frequency_and_presence_penalties")
+(ff:def-foreign-call (llama-sample-repetition-penalties "llama_sample_repetition_penalties")
     ((ctx (* llama-context))
      (candidates (* llama-token-data-array))
      (last_tokens (* llama-token))
-     (last-tokens-size :unsigned-long)
-     (alpha-frequency :float)
-     (alpha-presence :float))
+     (penalty-last-n :unsigned-long)
+     (penalty-repeat :float)
+     (penalty-freq :float)
+     (penalty-present :float))
   :returning :void)
 
 (ff:def-foreign-call (llama-sample-classifier-free-guidance "llama_sample_classifier_free_guidance")
@@ -364,11 +388,18 @@
    (min-keep :unsigned-long))
   :returning :void)
 
-(ff:def-foreign-call (llama-sample-temperature "llama_sample_temperature")
+(ff:def-foreign-call (llama-sample-temp "llama_sample_temp")
   ((ctx (* llama-context))
    (candidates (* llama-token-data-array))
    (temp :float))
   :returning :void)
+
+;; ;; DEPRECATED
+;; (ff:def-foreign-call (llama-sample-temperature "llama_sample_temperature")
+;;   ((ctx (* llama-context))
+;;    (candidates (* llama-token-data-array))
+;;    (temp :float))
+;;   :returning :void)
 
 (ff:def-foreign-call (llama-sample-grammar "llama_sample_grammar")
     ((ctx (* llama-context))

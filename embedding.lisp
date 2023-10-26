@@ -1,7 +1,7 @@
 (in-package :llama)
 
 (defun %embedding (ctx tokens txt verbose add-beginning-of-sentence threads)
-  (tokenize ctx tokens txt :add-beginning-of-sentence add-beginning-of-sentence)
+  (tokenize (model ctx) tokens txt :add-beginning-of-sentence add-beginning-of-sentence)
   (when (> verbose 0) (print (list-tokens tokens :context ctx :limit nil)))  
   (evaluate ctx tokens 0 threads) ;; n-past = 0
   (get-embeddings ctx))
@@ -12,11 +12,9 @@
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
   (llama-backend-init numa)
   (let* ((mdl (make-instance 'mdl :file model
-				  :params (context-parameters :embedding t :n-ctx n-ctx
-							      :n-gpu-layers (if metal 1 0))))
+				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
 	 (ctx (make-instance 'ctx :model mdl
-				  :params (context-parameters :embedding t :n-ctx n-ctx
-							      :n-gpu-layers (if metal 1 0))))
+				  :params (context-parameters :embedding t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size ntokens)))
     (prog1
 	(if (listp prompt)
