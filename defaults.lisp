@@ -1,6 +1,7 @@
 (in-package :llama)
 
 (defvar *metal* (stringp (ignore-errors
+			  #+(or ARM ARM64)
 			  (uiop:run-program (format nil "otool -L ~A | grep Metal" *lib*)
 					    :force-shell t :output :string))))
 

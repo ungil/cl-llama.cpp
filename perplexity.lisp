@@ -57,16 +57,16 @@ If <text> is a pathname the contents of the file are used."
       (when (> verbose 1) (print-timings ctx)))))
 
 ;; ./perplexity  -f ~/wikitext-2-raw/wiki.test.raw -ngl 1
-;; [1]4.2343,[2]4.7119,[3]5.5786,[4]6.1821
+;; [1]4.2343,[2]4.7119,[3]5.5785,[4]6.1820
 
 ;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1 :metal t)
-;; [1]4.2343 [2]4.7119 [3]5.5786 [4]6.1821 
+;; [1]4.2343 [2]4.7119 [3]5.5785 [4]6.1820
 
 ;; ./perplexity  -f ~/wikitext-2-raw/wiki.test.raw -ngl 0
-;; [1]4.2344,[2]4.7123,[3]5.5789,[4]6.1824
+;; [1]4.2323,[2]4.7107,[3]5.5785,[4]6.1813
 
 ;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :verbose 1 :metal nil)
-;; [1]4.2344 [2]4.7123 [3]5.5789 [4]6.1824 
+;; [1]4.2323 [2]4.7107 [3]5.5785 [4]6.1813 
 
 
 

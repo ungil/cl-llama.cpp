@@ -18,6 +18,8 @@
 
 ;; llama_ftype
 
+;; llama_rope_scaling_type
+
 (fli:define-c-struct (llama-token-data (:foreign-name "llama_token_data"))
     (id llama-token)
   (logit :float)
@@ -55,8 +57,14 @@
   (n-batch :int)
   (n-threads :int)
   (n-threads-batch :int)
+  (rope-scaling-type :int8)
   (rope-freq-base :float)
   (rope-freq-scale :float)
+  (yarn-ext-factor :float)
+  (yarn-attn-factor :float)
+  (yarn-beta-fast :float)
+  (yarn-beta-slow :float)
+  (yarn-orig-ctx :int)
   (mul-mat (:boolean :byte))
   (f16-kv (:boolean :byte))
   (logits-all (:boolean :byte))
@@ -169,6 +177,14 @@
 
 ;; llama_rope_freq_scale_train
 
+;; llama_model_meta_val_str
+
+;; llama_model_meta_count
+
+;; llama_model_meta_key_by_index
+
+;; llama_model_meta_val_str_by_index
+
 (fli:define-foreign-function (llama-model-desc "llama_model_desc")
     ((model (:pointer (:struct llama-model)))
      (buf (:pointer :char))
@@ -203,12 +219,14 @@
      (n-threads :int))
   :result-type :int)
 
-;; ;; DEPRECATED
-;; (fli:define-foreign-function (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
-;;     ((ctx (:pointer (:struct llama-context))))
-;;   :result-type :int)
-
-;; llama_kv_cache_tokens_rm
+;; llama_kv_cache_view_cell
+;; llama_kv_cache_view
+;; llama_kv_cache_view_init
+;; llama_kv_cache_view_free
+;; llama_kv_cache_view_update
+;; llama_get_kv_cache_token_count
+;; llama_get_kv_cache_used_cells
+;; llama_kv_cache_clear
 ;; llama_kv_cache_seq_rm
 ;; llama_kv_cache_seq_cp
 ;; llama_kv_cache_seq_keep
@@ -290,6 +308,14 @@
 (fli:define-foreign-function (llama-token-nl "llama_token_nl")
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
+
+(fli:define-foreign-function (llama-add-bos-token "llama_add_bos_token")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
+
+(fli:define-foreign-function (llama-add-eos-token "llama_add_eos_token")
+    ((model (:pointer (:struct llama-model))))
+  :result-type :int)
 
 (fli:define-foreign-function (llama-token-prefix "llama_token_prefix")
     ((model (:pointer (:struct llama-model))))
@@ -373,6 +399,13 @@
   :result-type :void)
 
 (fli:define-foreign-function (llama-sample-top-p "llama_sample_top_p")
+    ((ctx (:pointer (:struct llama-context)))
+     (candidates (:pointer llama-token-data-array))
+     (p :float)
+     (min-keep :unsigned-long))
+  :result-type :void)
+
+(fli:define-foreign-function (llama-sample-min-p "llama_sample_min_p")
     ((ctx (:pointer (:struct llama-context)))
      (candidates (:pointer llama-token-data-array))
      (p :float)

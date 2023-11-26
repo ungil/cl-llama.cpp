@@ -18,6 +18,8 @@
 
 ;; llama_ftype
 
+;; llama_rope_scaling_type
+
 (ff:def-foreign-type llama-token-data
     (:struct (id llama-token)
 	     (logit :float)
@@ -48,8 +50,14 @@
 	     (n-batch :int)
 	     (n-threads :int)
 	     (n-threads-batch :int)
+	     (rope-scaling-type :char)
 	     (rope-freq-base :float)
 	     (rope-freq-scale :float)
+	     (yarn-ext-factor :float)
+	     (yarn-attn-factor :float)
+	     (yarn-beta-fast :float)
+	     (yarn-beta-slow :float)
+	     (yarn-orig-ctx :int)
 	     (mul-mat :char boolean)
 	     (f16-kv :char boolean)
 	     (logits-all :char boolean)
@@ -164,6 +172,14 @@
 
 ;; llama_rope_freq_scale_train
 
+;; llama_model_meta_val_str
+
+;; llama_model_meta_count
+
+;; llama_model_meta_key_by_index
+
+;; llama_model_meta_val_str_by_index
+
 (ff:def-foreign-call (llama-model-desc "llama_model_desc")
     ((model (* llama-model))
      (buf (* :char))
@@ -198,12 +214,14 @@
      (n-threads :int))
   :returning :int)
 
-;; ;; DEPRECATED
-;; (ff:def-foreign-call (llama-get-kv-cache-token-count "llama_get_kv_cache_token_count")
-;;     ((ctx (* llama-context)))
-;;   :returning :int)
-
-;; llama_kv_cache_tokens_rm
+;; llama_kv_cache_view_cell
+;; llama_kv_cache_view
+;; llama_kv_cache_view_init
+;; llama_kv_cache_view_free
+;; llama_kv_cache_view_update
+;; llama_get_kv_cache_token_count
+;; llama_get_kv_cache_used_cells
+;; llama_kv_cache_clear
 ;; llama_kv_cache_seq_rm
 ;; llama_kv_cache_seq_cp
 ;; llama_kv_cache_seq_keep
@@ -285,6 +303,14 @@
 (ff:def-foreign-call (llama-token-nl "llama_token_nl")
     ((model (* llama-model)))
   :returning llama-token)
+
+(ff:def-foreign-call (llama-add-bos-token "llama_add_bos_token")
+    ((model (* llama-model)))
+  :returning :int)
+
+(ff:def-foreign-call (llama-add-eos-token "llama_add_eos_token")
+    ((model (* llama-model)))
+  :returning :int)
 
 (ff:def-foreign-call (llama-token-prefix "llama_token_prefix")
     ((model (* llama-model)))
@@ -368,6 +394,13 @@
   :returning :void)
 
 (ff:def-foreign-call (llama-sample-top-p "llama_sample_top_p")
+  ((ctx (* llama-context))
+   (candidates (* llama-token-data-array))
+   (p :float)
+   (min-keep :unsigned-long))
+  :returning :void)
+
+(ff:def-foreign-call (llama-sample-min-p "llama_sample_min_p")
   ((ctx (* llama-context))
    (candidates (* llama-token-data-array))
    (p :float)

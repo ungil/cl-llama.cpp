@@ -56,7 +56,7 @@
   (incf (n tok)))
 
 (defun llama (&key (prompt "A") (predict *predict*) (model *model*) (threads *threads*) (verbose 0) (numa *numa*)
-		(stream t) (metal t) (seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
+		(stream t) (metal *metal*) (seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
 		(top-k *top-k*) (tfs-z *tfs-z*) (top-p *top-p*) (typical-p *typical-p*) (temp *temp*)
 		(mirostat *mirostat*) (mirostat-eta *mirostat-eta*) (mirostat-tau *mirostat-tau*)
 		(repeat-last-n *repeat-last-n*) (repeat-penalty *repeat-penalty*)

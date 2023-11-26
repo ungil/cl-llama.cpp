@@ -90,9 +90,9 @@
 #-ALLEGRO-CL-TRIAL
 (5am:test perplexity
   (5am:is (= (if *metal*
-		 1.1825176
-		 #+(or ARM ARM64) 1.1823927
-		 #-(or ARM ARM64) 1.1824803)
+		 1.1825091
+		 #+(or ARM ARM64) 1.1821864
+		 #-(or ARM ARM64) 1.1824327)
 	     (perplexity (apply #'concatenate 'string
 				(with-open-file (in (asdf:system-relative-pathname (asdf:find-system :llama) "LICENSE")
 						    :external-format :utf-8 :element-type 'character)

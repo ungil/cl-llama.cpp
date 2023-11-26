@@ -18,6 +18,8 @@
 
 ;; llama_ftype
 
+;; llama_rope_scaling_type
+
 (cffi:defcstruct llama-token-data
   (id llama-token)
   (logit :float)
@@ -48,8 +50,14 @@
   (n-batch :int)
   (n-threads :int)
   (n-threads-batch :int)
+  (rope-scaling-type :int) ;; int8 fails
   (rope-freq-base :float)
   (rope-freq-scale :float)
+  (yarn-ext-factor :float)
+  (yarn-attn-factor :float)
+  (yarn-beta-fast :float)
+  (yarn-beta-slow :float)
+  (yarn-orig-ctx :int)
   (mul-mat :bool)
   (f16-kv :bool)
   (logits-all :bool)
@@ -103,15 +111,21 @@
   (cffi:foreign-free ptr))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-context-params))
-  (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch rope-freq-base rope-freq-scale
+  (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
+				  rope-scaling-type rope-freq-base rope-freq-scale
+				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
 				  mul-mat f16-kv logits-all embedding)
 			    ptr (:struct llama-context-params))
     (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch :n-threads n-threads :n-threads-batch n-threads-batch
-				   :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
+				   :rope-scaling-type rope-scaling-type :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
+				   :yarn-ext-factor yarn-ext-factor :yarn-attn-factor yarn-attn-factor
+				   :yarn-beta-fast yarn-beta-fast :yarn-beta-slow yarn-beta-slow :yarn-orig-ctx yarn-orig-ctx
 				   :mul-mat mul-mat :f16-kv f16-kv :logits-all logits-all :embedding embedding)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-context-params) ptr)
-  (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch rope-freq-base rope-freq-scale
+  (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
+				  rope-scaling-type rope-freq-base rope-freq-scale
+				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
 				  mul-mat f16-kv logits-all embedding)
 			    ptr (:struct llama-context-params))
     (setf seed (slot-value value 'seed)
@@ -119,8 +133,14 @@
 	  n-batch (slot-value value 'n-batch)
 	  n-threads (slot-value value 'n-threads)
 	  n-threads-batch (slot-value value 'n-threads-batch)
+	  rope-scaling-type (slot-value value 'rope-scaling-type)
 	  rope-freq-base (slot-value value 'rope-freq-base)
 	  rope-freq-scale (slot-value value 'rope-freq-scale)
+	  yarn-ext-factor (slot-value value 'yarn-ext-factor)
+	  yarn-attn-factor (slot-value value 'yarn-attn-factor)
+	  yarn-beta-fast (slot-value value 'yarn-beta-fast)
+	  yarn-beta-slow (slot-value value 'yarn-beta-slow)
+	  yarn-orig-ctx (slot-value value 'yarn-orig-ctx)
 	  mul-mat (slot-value value 'mul-mat)
 	  f16-kv (slot-value value 'f16-kv)
 	  logits-all (slot-value value 'logits-all)
@@ -187,6 +207,14 @@
 
 ;; llama_rope_freq_scale_train
 
+;; llama_model_meta_val_str
+
+;; llama_model_meta_count
+
+;; llama_model_meta_key_by_index
+
+;; llama_model_meta_val_str_by_index
+
 (cffi:defcfun llama-model-desc :int
   (model (:pointer (:struct llama-model)))
   (buf :string)
@@ -216,11 +244,14 @@
   (path-base-model :string)
   (n-threads :int))
 
-;; ;; DEPRECATED
-;; (cffi:defcfun llama-get-kv-cache-token-count :int
-;;   (ctx (:pointer (:struct llama-context))))
-
-;; llama_kv_cache_tokens_rm
+;; llama_kv_cache_view_cell
+;; llama_kv_cache_view
+;; llama_kv_cache_view_init
+;; llama_kv_cache_view_free
+;; llama_kv_cache_view_update
+;; llama_get_kv_cache_token_count
+;; llama_get_kv_cache_used_cells
+;; llama_kv_cache_clear
 ;; llama_kv_cache_seq_rm
 ;; llama_kv_cache_seq_cp
 ;; llama_kv_cache_seq_keep
@@ -290,6 +321,12 @@
   (model (:pointer (:struct llama-model))))
 
 (cffi:defcfun llama-token-nl llama-token
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-add-bos-token :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-add-eos-token :int
   (model (:pointer (:struct llama-model))))
 
 (cffi:defcfun llama-token-prefix llama-token
@@ -365,6 +402,12 @@
   (min-keep :unsigned-long))
 
 (cffi:defcfun llama-sample-top-p :void
+  (ctx (:pointer (:struct llama-context)))
+  (candidates (:pointer (:struct llama-token-data-array)))
+  (p :float)
+  (min-keep :unsigned-long))
+
+(cffi:defcfun llama-sample-min-p :void
   (ctx (:pointer (:struct llama-context)))
   (candidates (:pointer (:struct llama-token-data-array)))
   (p :float)
