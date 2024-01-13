@@ -69,16 +69,16 @@
 
 (5am:test embedding
   (5am:is (equalp (if *metal*
-		      #(1.3826334 -1.6712512 0.81991553)		      
+		      #(1.3933222 -1.6725233 0.8143233)
 		      #+(or ARM ARM64) #(1.3917959 -1.6723749 0.8140562)
 		      #-(or ARM ARM64) #(1.3847897 -1.6708059 0.8206482))
 		  (subseq (embedding "testing") 0 3))))
 
 (5am:test embeddings
   (5am:is (equalp (if *metal*
-		      '(#(1.3826334 -1.6712512 0.81991553)
-			#(-2.4520674 1.4927745 -2.1975682)
-			#(1.3826334 -1.6712512 0.81991553))		      
+		      '(#(1.3933222 -1.6725233 0.8143233)
+			#(-2.4424152 1.4967872 -2.196422)
+			#(1.3933222 -1.6725233 0.8143233))
 		      #+(or ARM ARM64) '(#(1.3917959 -1.6723749 0.8140562)
 					 #(-2.443811 1.4967367 -2.1949144)
 					 #(1.3917959 -1.6723749 0.8140562))
@@ -90,9 +90,9 @@
 #-ALLEGRO-CL-TRIAL
 (5am:test perplexity
   (5am:is (= (if *metal*
-		 1.1825091
-		 #+(or ARM ARM64) 1.1821864
-		 #-(or ARM ARM64) 1.1824327)
+		 1.182393
+		 #+(or ARM ARM64) 1.1823927
+		 #-(or ARM ARM64) 1.1824803)
 	     (perplexity (apply #'concatenate 'string
 				(with-open-file (in (asdf:system-relative-pathname (asdf:find-system :llama) "LICENSE")
 						    :external-format :utf-8 :element-type 'character)
@@ -110,7 +110,7 @@
 
 (5am:test llama-keep
   (5am:is (string= (if *metal* 
-		       "in the first part of▁this▁series▁we▁have▁discussed▁the▁basic▁principles▁of▁the▁theory▁of▁gravity.▁To▁explain▁this,▁we▁have▁to▁use▁it.<0x0A>to▁the▁last▁byte,"
+		       "in the first part of▁this▁series▁we▁have▁discussed▁the▁basic▁principles▁of▁the▁theory▁of▁gravity.▁To▁explain▁this,▁we▁have▁to▁use▁it.<0x0A>to▁the▁'Cathedral"
 		       #+(or ARM ARM64) "in the first part of▁this▁series▁we▁have▁discussed▁the▁basic▁principles▁of▁the▁theory▁of▁gravity.▁To▁explain▁this,▁we▁have▁to▁use▁it.<0x0A>to▁the▁'Cab"
 		       #-(or ARM ARM64) "in the first part of▁this▁series▁we▁have▁discussed▁the▁basic▁principles▁of▁the▁theory▁of▁gravity.▁To▁explain▁this,▁we▁have▁to▁use▁it.<0x0A>to▁the▁last▁byte,")
 		   (with-output-to-string (*standard-output*)
@@ -118,7 +118,7 @@
 
 (5am:test llama-batches
   (5am:is (string= (if *metal*
-		       "in the first part of▁this▁series▁we▁have▁discussed▁the▁concept▁of▁the▁digital▁twin▁in▁the▁form▁of▁a▁digital▁model."
+		       "in the first part of▁this▁series▁we▁have▁discussed▁the▁concept▁of▁the▁digital▁twin▁in▁the▁form▁of▁a▁digital▁prototype,"
 		       #+(or ARM ARM64) "in the first part of▁this▁series▁we▁have▁discussed▁the▁concept▁of▁the▁digital▁twin▁in▁the▁form▁of▁a▁digital▁prototype,"
 		       #-(or ARM ARM64) "in the first part of▁this▁series▁we▁have▁discussed▁the▁concept▁of▁the▁digital▁twin▁in▁the▁form▁of▁a▁digital▁model.")
 		   (with-output-to-string (*standard-output*)

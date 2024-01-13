@@ -20,6 +20,8 @@
 
 ;; llama_rope_scaling_type
 
+;; llama_split_mode
+
 (fli:define-c-struct (llama-token-data (:foreign-name "llama_token_data"))
     (id llama-token)
   (logit :float)
@@ -37,16 +39,22 @@
     (:struct llama-token-data-array))
 
 (fli:define-c-typedef (llama-progress-callback (:foreign-name "llama_progress_callback"))
-    (:pointer (:function (:float (:pointer :void)) :void)))
+    (:pointer (:function (:float (:pointer :void)) :bool)))
 
 ;; (fli:define-c-struct (llama-batch (:foreign-name "llama_batch"))
 
+;; llama_model_kv_override_type
+
+;; (fli:define-c-struct (llama-batch (:foreign-name "llama_model_kv_override"))
+
 (fli:define-c-struct (llama-model-params (:foreign-name "llama_model_params"))
-  (n-gpu-layers :int)
+    (n-gpu-layers :int)
+  (split-mode :int)
   (main-gpu :int)
   (tensor-split (:pointer :float))
   (progress-callback llama-progress-callback)
   (progress-callback-user-data (:pointer :void))
+  (kv-overrides (:pointer :void))
   (vocab-only (:boolean :byte))
   (use-mmap (:boolean :byte))
   (use-mlock (:boolean :byte)))
@@ -65,10 +73,12 @@
   (yarn-beta-fast :float)
   (yarn-beta-slow :float)
   (yarn-orig-ctx :int)
+  (type-k :int)
+  (type-v :int)
   (mul-mat (:boolean :byte))
-  (f16-kv (:boolean :byte))
   (logits-all (:boolean :byte))
-  (embedding (:boolean :byte)))
+  (embedding (:boolean :byte))
+  (offload-kqv (:boolean :byte)))
 
 ;; llama_log_callback
 
@@ -159,6 +169,10 @@
     ((ctx (:pointer (:struct llama-context))))
   :result-type :int)
 
+(fli:define-foreign-function (llama-n-batch "llama_n_batch")
+    ((ctx (:pointer (:struct llama-context))))
+  :result-type :int)
+
 (fli:define-foreign-function (llama-vocab-type "llama_vocab_type")
     ((model (:pointer (:struct llama-model))))
   :result-type :int)
@@ -231,6 +245,7 @@
 ;; llama_kv_cache_seq_cp
 ;; llama_kv_cache_seq_keep
 ;; llama_kv_cache_seq_shift
+;; llama_kv_cache_seq_div
 
 (fli:define-foreign-function (llama-get-state-size "llama_get_state_size")
     ((ctx (:pointer (:struct llama-context))))

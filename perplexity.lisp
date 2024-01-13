@@ -50,7 +50,7 @@ If <text> is a pathname the contents of the file are used."
   (let* ((mdl (make-instance 'mdl :file model
 				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
 	 (ctx (make-instance 'ctx :model mdl
-				  :params (context-parameters :f16-kv t :logits-all t :n-ctx n-ctx)))
+				  :params (context-parameters :logits-all t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size (length text))))
     (prog1
 	(%perplexity ctx tokens text verbose add-beginning-of-sentence threads)

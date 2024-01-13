@@ -20,6 +20,8 @@
 
 ;; llama_rope_scaling_type
 
+;; llama_split_mode
+
 (cffi:defcstruct llama-token-data
   (id llama-token)
   (logit :float)
@@ -34,12 +36,18 @@
 
 (cffi:defcstruct llama-batch)
 
+;; llama_model_kv_override_type
+
+(cffi:defcstruct llama-model-kv-override)
+
 (cffi:defcstruct (llama-model-params :class c-model-params)
-  (n-gpu-layers :int)
+    (n-gpu-layers :int)
+  (split-mode :int)
   (main-gpu :int)
   (tensor-split :pointer)
   (progress-callback :pointer)
   (progress-callback-user-data :pointer)
+  (kv-overrides :pointer)
   (vocab-only :bool)
   (use-mmap :bool)
   (use-mlock :bool))
@@ -58,10 +66,12 @@
   (yarn-beta-fast :float)
   (yarn-beta-slow :float)
   (yarn-orig-ctx :int)
+  (type-k :int)
+  (type-v :int)
   (mul-mat :bool)
-  (f16-kv :bool)
   (logits-all :bool)
-  (embedding :bool))
+  (embedding :bool)
+  (offload-kqv :bool))
 
 ;; llama_log_callback
 
@@ -87,23 +97,25 @@
   (n-eval :int))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-model-params))
-  (cffi:with-foreign-slots ((n-gpu-layers main-gpu tensor-split progress-callback progress-callback-user-data
-					  vocab-only use-mmap use-mlock)
+  (cffi:with-foreign-slots ((n-gpu-layers split-mode main-gpu tensor-split progress-callback progress-callback-user-data
+					  vocab-only kv-overrides use-mmap use-mlock)
 			    ptr (:struct llama-model-params))
-    (make-instance 'model-params :n-gpu-layers n-gpu-layers :main-gpu main-gpu :tensor-split tensor-split
+    (make-instance 'model-params :n-gpu-layers n-gpu-layers :split-mode split-mode :main-gpu main-gpu :tensor-split tensor-split
 				 :progress-callback progress-callback :progress-callback-user-data progress-callback-user-data
-				 :vocab-only vocab-only :use-mmap use-mmap :use-mlock use-mlock)))
+				 :vocab-only vocab-only :kv-overrides kv-overrides :use-mmap use-mmap :use-mlock use-mlock)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-model-params) ptr)
   (cffi:with-foreign-slots ((n-gpu-layers main-gpu tensor-split progress-callback progress-callback-user-data
-					  vocab-only use-mmap use-mlock)
+					  vocab-only kv-overrides use-mmap use-mlock)
 			    ptr (:struct llama-model-params))
     (setf n-gpu-layers (slot-value value 'n-gpu-layers)
+	  split-mode (slot-value value 'split-mode)
 	  main-gpu (slot-value value 'main-gpu)
 	  tensor-split (slot-value value 'tensor-split)
 	  progress-callback (slot-value value 'progress-callback)
 	  progress-callback-user-data (slot-value value 'progress-callback-user-data)
 	  vocab-only (slot-value value 'vocab-only)
+	  kv-overrides (slot-value value 'kv-overrides)
 	  use-mmap (slot-value value 'use-mmap)
 	  use-mlock (slot-value value 'use-mlock))))
 
@@ -114,19 +126,20 @@
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
 				  rope-scaling-type rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
-				  mul-mat f16-kv logits-all embedding)
+				  type-k type-v mul-mat logits-all embedding offload-kqv)
 			    ptr (:struct llama-context-params))
     (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch :n-threads n-threads :n-threads-batch n-threads-batch
 				   :rope-scaling-type rope-scaling-type :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
 				   :yarn-ext-factor yarn-ext-factor :yarn-attn-factor yarn-attn-factor
 				   :yarn-beta-fast yarn-beta-fast :yarn-beta-slow yarn-beta-slow :yarn-orig-ctx yarn-orig-ctx
-				   :mul-mat mul-mat :f16-kv f16-kv :logits-all logits-all :embedding embedding)))
+				   :type-k type-k :type-v type-v
+				   :mul-mat mul-mat :logits-all logits-all :embedding embedding :offload-kqv offload-kqv)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-context-params) ptr)
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
 				  rope-scaling-type rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
-				  mul-mat f16-kv logits-all embedding)
+				  type-k type-v mul-mat logits-all embedding offload-kqv)
 			    ptr (:struct llama-context-params))
     (setf seed (slot-value value 'seed)
 	  n-ctx (slot-value value 'n-ctx)
@@ -141,10 +154,12 @@
 	  yarn-beta-fast (slot-value value 'yarn-beta-fast)
 	  yarn-beta-slow (slot-value value 'yarn-beta-slow)
 	  yarn-orig-ctx (slot-value value 'yarn-orig-ctx)
+	  type-k (slot-value value 'type-k)
+	  type-v (slot-value value 'type-v)
 	  mul-mat (slot-value value 'mul-mat)
-	  f16-kv (slot-value value 'f16-kv)
 	  logits-all (slot-value value 'logits-all)
-	  embedding (slot-value value 'embedding))))
+	  embedding (slot-value value 'embedding)
+	  offload-kqv (slot-value value 'offload-kqv))))
 
 (defmethod cffi:free-translated-object (ptr (type c-context-params) param)
   (cffi:foreign-free ptr))
@@ -191,6 +206,9 @@
   (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-n-ctx :int
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-n-batch :int
   (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-vocab-type :int
@@ -256,6 +274,7 @@
 ;; llama_kv_cache_seq_cp
 ;; llama_kv_cache_seq_keep
 ;; llama_kv_cache_seq_shift
+;; llama_kv_cache_seq_div
 
 (cffi:defcfun llama-get-state-size :unsigned-long
   (ctx (:pointer (:struct llama-context))))

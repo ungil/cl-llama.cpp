@@ -20,6 +20,8 @@
 
 ;; llama_rope_scaling_type
 
+;; llama_split_mode
+
 (ff:def-foreign-type llama-token-data
     (:struct (id llama-token)
 	     (logit :float)
@@ -34,13 +36,19 @@
 
 ;; (ff:def-foreign-type llama-batch
 
+;; llama_model_kv_override_type
+
+;; (fli:define-c-struct (llama-batch (:foreign-name "llama_model_kv_override"))
+
 (ff:def-foreign-type llama-model-params
     (:struct (n-gpu-layers :int)
+	     (split-mode :int)
 	     (main-gpu :int)
 	     (tensor-split (* :float))
 	     (progress-callback (* :void))
 	     (progress-callback-user-data (* :void))
 	     (vocab-only :char boolean)
+	     (kv-overrides (* :void))
 	     (use-mmap :char boolean)
 	     (use-mlock :char boolean)))
 
@@ -58,10 +66,12 @@
 	     (yarn-beta-fast :float)
 	     (yarn-beta-slow :float)
 	     (yarn-orig-ctx :int)
+	     (type-k :int)
+	     (type-v :int)
 	     (mul-mat :char boolean)
-	     (f16-kv :char boolean)
 	     (logits-all :char boolean)
-	     (embedding :char boolean)))
+	     (embedding :char boolean)
+	     (offload-kqv :char boolean)))
 
 ;; llama_log_callback
 
@@ -226,6 +236,7 @@
 ;; llama_kv_cache_seq_cp
 ;; llama_kv_cache_seq_keep
 ;; llama_kv_cache_seq_shift
+;; llama_kv_cache_seq_div
 
 (ff:def-foreign-call (llama-get-state-size "llama_get_state_size")
     ((ctx (* llama-context)))
