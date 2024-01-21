@@ -66,6 +66,8 @@
   (yarn-beta-fast :float)
   (yarn-beta-slow :float)
   (yarn-orig-ctx :int)
+  (cb-eval :pointer)
+  (cb-eval-user-data :pointer)  
   (type-k :int)
   (type-v :int)
   (mul-mat :bool)
@@ -126,12 +128,14 @@
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
 				  rope-scaling-type rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
+				  cb-eval cb-eval-user-data
 				  type-k type-v mul-mat logits-all embedding offload-kqv)
 			    ptr (:struct llama-context-params))
     (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch :n-threads n-threads :n-threads-batch n-threads-batch
 				   :rope-scaling-type rope-scaling-type :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
 				   :yarn-ext-factor yarn-ext-factor :yarn-attn-factor yarn-attn-factor
 				   :yarn-beta-fast yarn-beta-fast :yarn-beta-slow yarn-beta-slow :yarn-orig-ctx yarn-orig-ctx
+				   :cb-eval cb-eval :cb-eval-user-data cb-eval-user-data
 				   :type-k type-k :type-v type-v
 				   :mul-mat mul-mat :logits-all logits-all :embedding embedding :offload-kqv offload-kqv)))
 
@@ -139,6 +143,7 @@
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
 				  rope-scaling-type rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
+				  cb-eval cb-eval-user-data
 				  type-k type-v mul-mat logits-all embedding offload-kqv)
 			    ptr (:struct llama-context-params))
     (setf seed (slot-value value 'seed)
@@ -154,6 +159,8 @@
 	  yarn-beta-fast (slot-value value 'yarn-beta-fast)
 	  yarn-beta-slow (slot-value value 'yarn-beta-slow)
 	  yarn-orig-ctx (slot-value value 'yarn-orig-ctx)
+	  cb-eval (slot-value value 'cb-eval)
+	  cb-eval-user-data (slot-value value 'cb-eval-user-data)
 	  type-k (slot-value value 'type-k)
 	  type-v (slot-value value 'type-v)
 	  mul-mat (slot-value value 'mul-mat)
@@ -404,6 +411,13 @@
   (alpha-frequency :float)
   (alpha-presence :float))
 
+(cffi:defcfun llama-sample-sample-apply-guidance :void
+  (ctx (:pointer (:struct llama-context)))
+  (logits (:pointer :float))
+  (logits-guidance-ctx (:pointer :float))
+  (scale :float))
+
+;; deprecated - use llama-sample-apply-guidance
 (cffi:defcfun llama-sample-classifier-free-guidance :void
   (ctx (:pointer (:struct llama-context)))
   (candidates (:pointer (:struct llama-token-data-array)))

@@ -66,6 +66,8 @@
 	     (yarn-beta-fast :float)
 	     (yarn-beta-slow :float)
 	     (yarn-orig-ctx :int)
+	     (cb-eval (* :void))
+	     (cb-eval-user-data (* :void))
 	     (type-k :int)
 	     (type-v :int)
 	     (mul-mat :char boolean)
@@ -385,6 +387,14 @@
      (penalty-present :float))
   :returning :void)
 
+(ff:def-foreign-call (llama-sample-apply-guidance "llama_sample_apply_guidance")
+    ((ctx (* llama-context))
+     (logits (* :float))
+     (logits-guidance-ctx (* :float))
+     (scale :float))
+  :returning :void)
+
+;; deprecated - use llama-sample-apply-guidance
 (ff:def-foreign-call (llama-sample-classifier-free-guidance "llama_sample_classifier_free_guidance")
     ((ctx (* llama-context))
      (candidates (* llama-token-data-array))

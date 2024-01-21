@@ -80,6 +80,8 @@
    (yarn-beta-fast :initarg :yarn-beta-fast)
    (yarn-beta-slow :initarg :yarn-beta-slow)
    (yarn-orig-ctx :initarg :yarn-orig-ctx)
+   (cb-eval :initarg :cb-eval)
+   (cb-eval-user-data :initarg :cb-eval-user-data)
    (type-k :initarg :type-k)
    (type-v :initarg :type-v)   
    (mul-mat :initarg :mul-mat)
