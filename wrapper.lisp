@@ -88,6 +88,7 @@
    (logits-all :initarg :logits-all)
    (embedding :initarg :embedding)
    (offload-kqv :initarg :offload-kqv)
+   (do-pooling :initarg :do-pooling)
    #+(or lispworks allegro) foreign-struct))
 
 (defun context-default-params ()
@@ -99,10 +100,10 @@
   (llama-max-devices))
 
 (defun mmap-supported ()
-  (llama-mmap-supported))
+  (llama-supports-mmap))
 
 (defun mlock-supported ()
-  (llama-mlock-supported))
+  (llama-supports-mlock))
 
 (defun model-from-file (filename &optional (params (model-default-params)))
   (let ((file (namestring (probe-file (namestring filename)))))

@@ -65,7 +65,7 @@
   (n-batch :int)
   (n-threads :int)
   (n-threads-batch :int)
-  (rope-scaling-type :int8)
+  (rope-scaling-type :int)
   (rope-freq-base :float)
   (rope-freq-scale :float)
   (yarn-ext-factor :float)
@@ -80,7 +80,8 @@
   (mul-mat (:boolean :byte))
   (logits-all (:boolean :byte))
   (embedding (:boolean :byte))
-  (offload-kqv (:boolean :byte)))
+  (offload-kqv (:boolean :byte))
+  (do-pooling (:boolean :byte)))
 
 ;; llama_log_callback
 
@@ -116,7 +117,11 @@
 ;; llama_model_quantize_default_params
 
 (fli:define-foreign-function (llama-backend-init "llama_backend_init")
-    ((numa (:boolean :byte)))
+  nil
+  :result-type :void)
+
+(fli:define-foreign-function (llama-numa-init "llama_numa_init")
+    ((numa :int))
   :result-type :void)
 
 (fli:define-foreign-function (llama-backend-free "llama_backend_free")
@@ -155,13 +160,27 @@
   nil
   :result-type :int)
 
-(fli:define-foreign-function (llama-mmap-supported "llama_mmap_supported")
+(fli:define-foreign-function (llama-supports-mmap "llama_supports_mmap")
   nil
   :result-type (:boolean :byte))
 
-(fli:define-foreign-function (llama-mlock-supported "llama_mlock_supported")
+(fli:define-foreign-function (llama-supports-mlock "llama_supports_mlock")
   nil
   :result-type (:boolean :byte))
+
+(fli:define-foreign-function (llama-supports-gpu-offload "llama_supports_gpu_offload")
+  nil
+  :result-type (:boolean :byte))
+
+;; ;; deprecated
+;; (fli:define-foreign-function (llama-mmap-supported "llama_mmap_supported")
+;;   nil
+;;   :result-type (:boolean :byte))
+
+;; ;; deprecated
+;; (fli:define-foreign-function (llama-mlock-supported "llama_mlock_supported")
+;;   nil
+;;   :result-type (:boolean :byte))
 
 (fli:define-foreign-function (llama-get-model "llama_get_model")
      ((ctx (:pointer (:struct llama-context))))
@@ -297,6 +316,11 @@
 
 (fli:define-foreign-function (llama-get-embeddings "llama_get_embeddings")
     ((ctx (:pointer (:struct llama-context))))
+  :result-type (:pointer :float))
+
+(fli:define-foreign-function (llama-get-embeddings-ith "llama_get_embeddings_ith")
+    ((ctx (:pointer (:struct llama-context)))
+     (i :int))
   :result-type (:pointer :float))
 
 (fli:define-foreign-function (llama-token-get-text "llama_token_get_text")
@@ -449,6 +473,14 @@
      (candidates (:pointer llama-token-data-array))
      (p :float)
      (min-keep :unsigned-long))
+  :result-type :void)
+
+(fli:define-foreign-function (llama-sample-entropy "llama_sample_entropy")
+    ((ctx (:pointer (:struct llama-context)))
+     (candidates (:pointer llama-token-data-array))
+     (min-temp :float)
+     (max-temp :float)
+     (exponent-val :float))
   :result-type :void)
 
 (fli:define-foreign-function (llama-sample-temp "llama_sample_temp")

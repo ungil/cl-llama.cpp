@@ -58,7 +58,7 @@
 	     (n-batch :int)
 	     (n-threads :int)
 	     (n-threads-batch :int)
-	     (rope-scaling-type :char)
+	     (rope-scaling-type :int)
 	     (rope-freq-base :float)
 	     (rope-freq-scale :float)
 	     (yarn-ext-factor :float)
@@ -73,7 +73,8 @@
 	     (mul-mat :char boolean)
 	     (logits-all :char boolean)
 	     (embedding :char boolean)
-	     (offload-kqv :char boolean)))
+	     (offload-kqv :char boolean)
+	     (do-pooling :char boolean)))
 
 ;; llama_log_callback
 
@@ -111,7 +112,11 @@
 ;; llama_model_quantize_default_params
 
 (ff:def-foreign-call (llama-backend-init "llama_backend_init")
-    ((numa :char boolean))
+    (:void)
+  :returning :void)
+
+(ff:def-foreign-call (llama-numa-init "llama_numa_init")
+    ((numa :int))
   :returning :void)
 
 (ff:def-foreign-call (llama-backend-free "llama_backend_free")
@@ -150,13 +155,27 @@
     (:void)
   :returning :int)
 
-(ff:def-foreign-call (llama-mmap-supported "llama_mmap_supported")
+(ff:def-foreign-call (llama-supports-mmap "llama_supports_mmap")
     (:void)
   :returning :boolean)
 
-(ff:def-foreign-call (llama-mlock-supported "llama_mlock_supported")
+(ff:def-foreign-call (llama-supports-mlock "llama_supports_mlock")
     (:void)
   :returning :boolean)
+
+(ff:def-foreign-call (llama-supports-gpu-offload "llama_supports_gpu_offload")
+    (:void)
+  :returning :boolean)
+
+;; ;; deprecated
+;; (ff:def-foreign-call (llama-mmap-supported "llama_mmap_supported")
+;;     (:void)
+;;   :returning :boolean)
+
+;; ;; deprecated
+;; (ff:def-foreign-call (llama-mlock-supported "llama_mlock_supported")
+;;     (:void)
+;;   :returning :boolean)
 
 (ff:def-foreign-call (llama-get-model "llama_get_model")
     ((ctx (* llama-context)))
@@ -288,6 +307,11 @@
 
 (ff:def-foreign-call (llama-get-embeddings "llama_get_embeddings")
     ((ctx (* llama-context)))
+  :returning ((* :float)))
+
+(ff:def-foreign-call (llama-get-embeddings-ith "llama_get_embeddings_ith")
+    ((ctx (* llama-context))
+     (i :int))
   :returning ((* :float)))
 
 (ff:def-foreign-call (llama-token-get-text "llama_token_get_text")
@@ -440,6 +464,14 @@
    (candidates (* llama-token-data-array))
    (p :float)
    (min-keep :unsigned-long))
+  :returning :void)
+
+(ff:def-foreign-call (llama-sample-entropy "llama_sample_entropy")
+  ((ctx (* llama-context))
+   (candidates (* llama-token-data-array))
+   (min-temp :float)
+   (max-temp :float)
+   (exponent-val :float))
   :returning :void)
 
 (ff:def-foreign-call (llama-sample-temp "llama_sample_temp")

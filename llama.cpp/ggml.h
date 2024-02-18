@@ -353,6 +353,7 @@ extern "C" {
         GGML_TYPE_Q8_K = 15,
         GGML_TYPE_IQ2_XXS = 16,
         GGML_TYPE_IQ2_XS  = 17,
+        GGML_TYPE_IQ3_XXS = 18,
         GGML_TYPE_I8,
         GGML_TYPE_I16,
         GGML_TYPE_I32,
@@ -389,6 +390,7 @@ extern "C" {
         GGML_FTYPE_MOSTLY_Q6_K = 14, // except 1d tensors
         GGML_FTYPE_MOSTLY_IQ2_XXS = 15, // except 1d tensors
         GGML_FTYPE_MOSTLY_IQ2_XS  = 16, // except 1d tensors
+        GGML_FTYPE_MOSTLY_IQ3_XXS = 17, // except 1d tensors
     };
 
     // available tensor operations:
@@ -489,6 +491,8 @@ extern "C" {
         GGML_UNARY_OP_GELU,
         GGML_UNARY_OP_GELU_QUICK,
         GGML_UNARY_OP_SILU,
+        GGML_UNARY_OP_HARDSWISH,
+        GGML_UNARY_OP_HARDSIGMOID,
 
         GGML_UNARY_OP_COUNT,
     };
@@ -501,9 +505,15 @@ extern "C" {
 
     enum ggml_log_level {
         GGML_LOG_LEVEL_ERROR = 2,
-        GGML_LOG_LEVEL_WARN = 3,
-        GGML_LOG_LEVEL_INFO = 4,
+        GGML_LOG_LEVEL_WARN  = 3,
+        GGML_LOG_LEVEL_INFO  = 4,
         GGML_LOG_LEVEL_DEBUG = 5
+    };
+
+    enum ggml_tensor_flag {
+        GGML_TENSOR_FLAG_INPUT  = 1,
+        GGML_TENSOR_FLAG_OUTPUT = 2,
+        GGML_TENSOR_FLAG_PARAM  = 4,
     };
 
     // ggml object
@@ -539,7 +549,7 @@ extern "C" {
         // op params - allocated as int32_t for alignment
         int32_t op_params[GGML_MAX_OP_PARAMS / sizeof(int32_t)];
 
-        bool is_param;
+        int32_t flags;
 
         struct ggml_tensor * grad;
         struct ggml_tensor * src[GGML_MAX_SRC];
@@ -563,6 +573,11 @@ extern "C" {
 
     static const size_t GGML_TENSOR_SIZE = sizeof(struct ggml_tensor);
 
+    // Abort callback
+    // If not NULL, called before ggml computation
+    // If it returns true, the computation is aborted
+    typedef bool (*ggml_abort_callback)(void * data);
+
     // the compute plan that needs to be prepared for ggml_graph_compute()
     // since https://github.com/ggerganov/ggml/issues/287
     struct ggml_cplan {
@@ -572,8 +587,8 @@ extern "C" {
         int n_threads;
 
         // abort ggml_graph_compute when true
-        bool (*abort_callback)(void * data);
-        void * abort_callback_data;
+        ggml_abort_callback abort_callback;
+        void *              abort_callback_data;
     };
 
     enum ggml_cgraph_eval_order {
@@ -643,6 +658,16 @@ extern "C" {
         void * wdata;
     };
 
+    // numa strategies
+    enum ggml_numa_strategy {
+        GGML_NUMA_STRATEGY_DISABLED   = 0,
+        GGML_NUMA_STRATEGY_DISTRIBUTE = 1,
+        GGML_NUMA_STRATEGY_ISOLATE    = 2,
+        GGML_NUMA_STRATEGY_NUMACTL    = 3,
+        GGML_NUMA_STRATEGY_MIRROR     = 4,
+        GGML_NUMA_STRATEGY_COUNT
+    };
+
     // misc
 
     GGML_API void    ggml_time_init(void); // call this once at the beginning of the program
@@ -653,7 +678,7 @@ extern "C" {
 
     GGML_API void    ggml_print_backtrace(void);
 
-    GGML_API void    ggml_numa_init(void); // call once for better performance on NUMA systems
+    GGML_API void    ggml_numa_init(enum ggml_numa_strategy numa); // call once for better performance on NUMA systems
     GGML_API bool    ggml_is_numa(void); // true if init detected that system has >1 NUMA node
 
     GGML_API void    ggml_print_object (const struct ggml_object * obj);
@@ -1032,6 +1057,16 @@ extern "C" {
             struct ggml_tensor  * a,
             struct ggml_tensor  * b);
 
+    // hardswish(x) = x * relu6(x + 3) / 6
+    GGML_API struct ggml_tensor * ggml_hardswish(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
+    // hardsigmoid(x) = relu6(x + 3) / 6
+    GGML_API struct ggml_tensor * ggml_hardsigmoid(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a);
+
     // normalize along rows
     GGML_API struct ggml_tensor * ggml_norm(
             struct ggml_context * ctx,
@@ -1348,13 +1383,17 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a);
 
-    // fused soft_max(a*scale + mask)
+    // fused soft_max(a*scale + mask + pos[i]*(ALiBi slope))
     // mask is optional
+    // pos is required when max_bias > 0.0f
+    // max_bias = 0.0f for no ALiBi
     GGML_API struct ggml_tensor * ggml_soft_max_ext(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             struct ggml_tensor  * mask,
-            float                 scale);
+            struct ggml_tensor  * pos,
+            float                 scale,
+            float                 max_bias);
 
     GGML_API struct ggml_tensor * ggml_soft_max_back(
             struct ggml_context * ctx,
@@ -1456,12 +1495,13 @@ extern "C" {
 
     // alibi position embedding
     // in-place, returns view(a)
-    GGML_API struct ggml_tensor * ggml_alibi(
+    GGML_DEPRECATED(GGML_API struct ggml_tensor * ggml_alibi(
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             int                   n_past,
             int                   n_head,
-            float                 bias_max);
+            float                 bias_max),
+        "use ggml_soft_max_ext instead (will be removed in Mar 2024)");
 
     // clamp
     // in-place, returns view(a)
@@ -1481,7 +1521,19 @@ extern "C" {
             int                  p1,
             int                  d0,
             int                  d1,
-            bool                 is_2D);
+            bool                 is_2D,
+            enum ggml_type       dst_type);
+
+    GGML_API struct ggml_tensor * ggml_conv_depthwise_2d(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * a,
+            struct ggml_tensor  * b,
+            int                  s0,
+            int                  s1,
+            int                  p0,
+            int                  p1,
+            int                  d0,
+            int                  d1);
 
     GGML_API struct ggml_tensor * ggml_conv_1d(
             struct ggml_context * ctx,
@@ -2062,6 +2114,12 @@ extern "C" {
             void * callback_data);
 
     //
+    // tensor flags
+    //
+    GGML_API void ggml_set_input(struct ggml_tensor * tensor);
+    GGML_API void ggml_set_output(struct ggml_tensor * tensor);
+
+    //
     // quantization
     //
 
@@ -2240,10 +2298,14 @@ extern "C" {
     GGML_API int ggml_cpu_has_blas       (void);
     GGML_API int ggml_cpu_has_cublas     (void);
     GGML_API int ggml_cpu_has_clblast    (void);
+    GGML_API int ggml_cpu_has_vulkan     (void);
+    GGML_API int ggml_cpu_has_kompute    (void);
     GGML_API int ggml_cpu_has_gpublas    (void);
     GGML_API int ggml_cpu_has_sse3       (void);
     GGML_API int ggml_cpu_has_ssse3      (void);
+    GGML_API int ggml_cpu_has_sycl       (void);
     GGML_API int ggml_cpu_has_vsx        (void);
+    GGML_API int ggml_cpu_has_matmul_int8(void);
 
     //
     // Internal types and functions exposed for tests and benchmarks
@@ -2257,7 +2319,8 @@ extern "C" {
 #endif
     typedef void (*ggml_to_float_t)  (const void  * GGML_RESTRICT x, float * GGML_RESTRICT y, int k);
     typedef void (*ggml_from_float_t)(const float * GGML_RESTRICT x, void  * GGML_RESTRICT y, int k);
-    typedef void (*ggml_vec_dot_t)   (const int n, float * GGML_RESTRICT s, const void * GGML_RESTRICT x, const void * GGML_RESTRICT y);
+    typedef void (*ggml_vec_dot_t)   (int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT x, size_t bx,
+                                      const void * GGML_RESTRICT y, size_t by, int nrc);
 
     typedef struct {
         const char      * type_name;
@@ -2269,6 +2332,7 @@ extern "C" {
         ggml_from_float_t from_float_reference;
         ggml_vec_dot_t    vec_dot;
         enum ggml_type    vec_dot_type;
+        int64_t           nrows; // number of rows to process simultaneously;
     } ggml_type_traits_t;
 
     GGML_API ggml_type_traits_t ggml_internal_get_type_traits(enum ggml_type type);

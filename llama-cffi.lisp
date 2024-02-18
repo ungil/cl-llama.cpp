@@ -58,7 +58,7 @@
   (n-batch :int)
   (n-threads :int)
   (n-threads-batch :int)
-  (rope-scaling-type :int) ;; int8 fails
+  (rope-scaling-type :int)
   (rope-freq-base :float)
   (rope-freq-scale :float)
   (yarn-ext-factor :float)
@@ -67,13 +67,14 @@
   (yarn-beta-slow :float)
   (yarn-orig-ctx :int)
   (cb-eval :pointer)
-  (cb-eval-user-data :pointer)  
+  (cb-eval-user-data :pointer)
   (type-k :int)
   (type-v :int)
   (mul-mat :bool)
   (logits-all :bool)
   (embedding :bool)
-  (offload-kqv :bool))
+  (offload-kqv :bool)
+  (do-pooling :bool))
 
 ;; llama_log_callback
 
@@ -129,7 +130,7 @@
 				  rope-scaling-type rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
 				  cb-eval cb-eval-user-data
-				  type-k type-v mul-mat logits-all embedding offload-kqv)
+				  type-k type-v mul-mat logits-all embedding offload-kqv do-pooling)
 			    ptr (:struct llama-context-params))
     (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch :n-threads n-threads :n-threads-batch n-threads-batch
 				   :rope-scaling-type rope-scaling-type :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
@@ -137,14 +138,14 @@
 				   :yarn-beta-fast yarn-beta-fast :yarn-beta-slow yarn-beta-slow :yarn-orig-ctx yarn-orig-ctx
 				   :cb-eval cb-eval :cb-eval-user-data cb-eval-user-data
 				   :type-k type-k :type-v type-v
-				   :mul-mat mul-mat :logits-all logits-all :embedding embedding :offload-kqv offload-kqv)))
+				   :mul-mat mul-mat :logits-all logits-all :embedding embedding :offload-kqv offload-kqv :do-pooling do-pooling)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-context-params) ptr)
   (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
 				  rope-scaling-type rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
 				  cb-eval cb-eval-user-data
-				  type-k type-v mul-mat logits-all embedding offload-kqv)
+				  type-k type-v mul-mat logits-all embedding offload-kqv do-pooling)
 			    ptr (:struct llama-context-params))
     (setf seed (slot-value value 'seed)
 	  n-ctx (slot-value value 'n-ctx)
@@ -166,7 +167,8 @@
 	  mul-mat (slot-value value 'mul-mat)
 	  logits-all (slot-value value 'logits-all)
 	  embedding (slot-value value 'embedding)
-	  offload-kqv (slot-value value 'offload-kqv))))
+	  offload-kqv (slot-value value 'offload-kqv)
+	  do-pooling (slot-value value 'do-pooling))))
 
 (defmethod cffi:free-translated-object (ptr (type c-context-params) param)
   (cffi:foreign-free ptr))
@@ -177,8 +179,10 @@
 
 ;; llama_model_quantize_default_params
 
-(cffi:defcfun llama-backend-init :void
-  (numa :boolean))
+(cffi:defcfun llama-backend-init :void)
+
+(cffi:defcfun llama-numa-init :void
+  (numa :int))
 
 (cffi:defcfun llama-backend-free :void)
 
@@ -205,9 +209,17 @@
 
 (cffi:defcfun llama-max-devices :int)
 
-(cffi:defcfun llama-mmap-supported :boolean)
+(cffi:defcfun llama-supports-mmap :boolean)
 
-(cffi:defcfun llama-mlock-supported :boolean)
+(cffi:defcfun llama-supports-mlock :boolean)
+
+(cffi:defcfun llama-supports-gpu-offload :boolean)
+
+;; ;; deprecated
+;; (cffi:defcfun llama-mmap-supported :boolean)
+
+;; ;; deprecated
+;; (cffi:defcfun llama-mlock-supported :boolean)
 
 (cffi:defcfun llama-get-model (:pointer (:struct llama-model))
   (ctx (:pointer (:struct llama-context))))
@@ -327,6 +339,10 @@
 
 (cffi:defcfun llama-get-embeddings (:pointer :float)
   (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-get-embeddings-ith (:pointer :float)
+  (ctx (:pointer (:struct llama-context)))
+  (i :int))
 
 (cffi:defcfun llama-token-get-text :string
   (model (:pointer (:struct llama-model)))
@@ -458,12 +474,19 @@
   (p :float)
   (min-keep :unsigned-long))
 
-(cffi:defcfun llama-sample-temperature :void
+(cffi:defcfun llama-sample-entropy :void
+  (ctx (:pointer (:struct llama-context)))
+  (candidates (:pointer (:struct llama-token-data-array)))
+  (min-temp :float)
+  (max-temp :float)
+  (exponent-val :float))
+
+(cffi:defcfun llama-sample-temp :void
   (ctx (:pointer (:struct llama-context)))
   (candidates (:pointer (:struct llama-token-data-array)))
   (temp :float))
 
-(cffi:defcfun llama-sample-temp :void
+(cffi:defcfun llama-sample-temperature :void
   (ctx (:pointer (:struct llama-context)))
   (candidates (:pointer (:struct llama-token-data-array)))
   (temp :float))

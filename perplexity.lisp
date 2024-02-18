@@ -31,7 +31,7 @@
 					 (1+ segment) (exp (/ nll count))))))
 	    finally (return (coerce (exp (/ nll count)) 'single-float))))))
 
-(defun perplexity (text &key (model *model*) (n-ctx *n-ctx*) (verbose 0) (numa *numa*)
+(defun perplexity (text &key (model *model*) (n-ctx *n-ctx*) (verbose 0) ;; (numa *numa*)
 			  (add-beginning-of-sentence t) (threads *threads*) (metal *metal*))
   "Calculate perplexity as done in llama.cpp/examples/perplexity
 Full blocks of length n-ctx are used (returns nil if there is not even one full block).
@@ -46,7 +46,7 @@ If <text> is a pathname the contents of the file are used."
 		     (if (equal (aref contents (1- (length contents))) #\Newline)
 			 (adjust-array contents (list (1- (length contents))))
 			 contents)))))
-  (llama-backend-init numa)
+  (llama-backend-init)
   (let* ((mdl (make-instance 'mdl :file model
 				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
 	 (ctx (make-instance 'ctx :model mdl
