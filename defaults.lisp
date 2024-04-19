@@ -7,7 +7,7 @@
 
 ;; (defparameter *numa* t)
 
-(defparameter *model* (truename "~/llama.cpp/models/7B/ggml-model-f16.gguf"))
+(defparameter *model* (probe-file "~/llama.cpp/models/7B/ggml-model-f16.gguf"))
 
 (defparameter *max-ctx* 2048)
 
