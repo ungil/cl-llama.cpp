@@ -1,4 +1,4 @@
-(in-package :llama)
+
 
 (cffi:defcstruct llama-model)
 
@@ -15,6 +15,14 @@
 ;; llama_vocab_type
 
 ;; llama_token_type
+(cffi:defcenum llama-token-type
+  (:LLAMA-TOKEN-TYPE-UNDEFINED 0)
+  (:LLAMA-TOKEN-TYPE-NORMAL 1)
+  (:LLAMA-TOKEN-TYPE-UNKNOWN 2)
+  (:LLAMA-TOKEN-TYPE-CONTROL 3)
+  (:LLAMA-TOKEN-TYPE-USER-DEFINED 4)
+  (:LLAMA-TOKEN-TYPE-UNUSED 5)
+  (:LLAMA-TOKEN-TYPE-BYTE 6))
 
 ;; llama_ftype
 
@@ -34,7 +42,18 @@
 
 (cffi:defctype llama-progress-callback :pointer)
 
-(cffi:defcstruct llama-batch)
+(cffi:defcstruct llama-batch
+  (n-tokens :int32)
+  (token llama-token)
+  (embd (:pointer :float))
+  (n-seq-id :int32)
+  (seq-id (:pointer (:pointer llama-seq-id)))
+  (logits (:pointer :int8))
+
+  ;; helper - can be deprecated in the future
+  (all-pos-0 llama-pos)
+  (all-pos-1 llama-pos)
+  (all-seq-id llama-seq-id))
 
 ;; llama_model_kv_override_type
 
@@ -325,8 +344,14 @@
 ;; llama_batch_get_one
 
 ;; llama_batch_init
+(cffi:defcfun llama-batch-init (:struct llama-batch)
+  (n-tokens :int32)
+  (embd :int32)
+  (n-seq-max :int32))
 
 ;; llama_batch_free
+(cffi:defcfun llama-batch-free :void
+  (batch (:struct llama-batch)))
 
 ;; llama_decode
 
