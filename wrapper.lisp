@@ -70,9 +70,14 @@
   ((seed :initarg :seed)
    (n-ctx :initarg :n-ctx)
    (n-batch :initarg :n-batch)
+   (n-ubatch :initarg :n-ubatch)
+   (n-seq-max :initarg :n-seq-max)
    (n-threads :initarg :n-threads)
    (n-threads-batch :initarg :n-threads-batch)
+
    (rope-scaling-type :initarg :rope-scaling-type)
+   (pooling-type :initarg :pooling-type)
+
    (rope-freq-base :initarg :rope-freq-base)
    (rope-freq-scale :initarg :rope-freq-scale)
    (yarn-ext-factor :initarg :yarn-ext-factor)
@@ -80,15 +85,20 @@
    (yarn-beta-fast :initarg :yarn-beta-fast)
    (yarn-beta-slow :initarg :yarn-beta-slow)
    (yarn-orig-ctx :initarg :yarn-orig-ctx)
+   (defrag-thold :initarg :defrag-thold)
+
    (cb-eval :initarg :cb-eval)
    (cb-eval-user-data :initarg :cb-eval-user-data)
+
    (type-k :initarg :type-k)
-   (type-v :initarg :type-v)   
-   (mul-mat :initarg :mul-mat)
+   (type-v :initarg :type-v)
+
    (logits-all :initarg :logits-all)
    (embedding :initarg :embedding)
    (offload-kqv :initarg :offload-kqv)
-   (do-pooling :initarg :do-pooling)
+
+   (abort-callback :initarg :abort-callback)
+   (abort-callback-data :initarg :abort-callback-data)
    #+(or lispworks allegro) foreign-struct))
 
 (defun context-default-params ()
@@ -403,6 +413,20 @@
 
 (defmethod reset-timings ((ctx ctx))
   (llama-reset-timings (ptr ctx)))
+
+(defclass batch ()
+    ((n-tokens :initarg :n-tokens)
+     (token :initarg :token)
+     (pos :initarg :pos)
+     (embd :initarg :embd)
+     (n-seq-id :initarg :n-seq-id)
+     (seq-id :initarg :seq-id)
+     (logits :initarg :logits)
+
+     ;; helper - can be deprecated in the future
+     (all-pos-0 :initarg :all-pos-0)
+     (all-pos-1 :initarg :all-pos-1)
+     (all-seq-id :initarg :all-seq-id)))
 
 (defun system-info ()
   #+lispworks (fli:convert-from-foreign-string (llama-print-system-info))
