@@ -294,7 +294,8 @@
 
 (defmethod evaluate ((ctx ctx) tokens n-batch)
   (let ((batch (build-init-batch tokens n-batch)))
-    (assert (= (llama-decode (ptr ctx) batch) 0))))
+    (assert (= (llama-decode (ptr ctx) batch) 0))
+    (llama-batch-free batch)))
 
 (defclass tokens ()
   ((n :accessor n :initform 0)
