@@ -410,6 +410,15 @@
     (prog1 (cffi:foreign-string-to-lisp buf :count n-tokens)
       (cffi:foreign-free buf))))
 
+(defmethod print-prompt ((ctx ctx) tokens stream)
+  (print-prompt (model ctx) tokens stream))
+
+(defmethod print-prompt ((mdl mdl) tokens stream)
+  (dolist (token-id (list-tokens tokens))
+    (princ (to-piece mdl token-id) stream))
+  (terpri stream)
+  (force-output stream))
+
 (defmethod get-vocab ((ctx ctx))
   (loop for id below (n-vocab (model ctx)) collect (get-token ctx id)))
 

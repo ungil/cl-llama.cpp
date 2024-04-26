@@ -91,7 +91,7 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
     ;; // TODO: replace with ring-buffer
     ;; std::vector<llama_token> last_n_tokens(n_ctx);
     ;; std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
-    (format stream "~&~A" prompt)
+    (print-prompt ctx embd-inp stream)
     (loop with n-remain = predict
 	  with n-past = 0
 	  with n-consumed = 0
