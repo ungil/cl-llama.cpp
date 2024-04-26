@@ -298,6 +298,9 @@
     (assert (= (llama-decode (ptr ctx) batch) 0))
     (llama-batch-free batch)))
 
+(defmethod decode ((ctx ctx) batch)
+  (assert (= (llama-decode (ptr ctx) batch) 0)))
+
 (defclass tokens ()
   ((n :accessor n :initform 0)
    (size :initarg :size :initform (error "specify :size (buffer size)") :accessor size)
@@ -347,6 +350,10 @@
 	   (ids (list-tokens obj :limit limit))
 	   (add (max 0 (- (n obj) limit))))
       (format stream "~A and ~D tokens more" ids add))))
+
+(defmethod get-one-batch ((toks tokens) n-tokens pos-0 seq-id)
+  ;; FIXME: other FFI
+  (llama-batch-get-one (ptr toks) n-tokens pos-0 seq-id))
 
 (defmethod tokenize ((mdl mdl) (tok fixnum) text &key add-beginning-of-sentence special)
   (tokenize mdl (make-instance 'tokens :size tok)

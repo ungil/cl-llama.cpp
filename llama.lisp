@@ -123,7 +123,8 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 	       (loop with i = 0
 		     while (< i (n embd))
 		     for n-eval = (min (- (n embd) i) n-batch)
-		     do (evaluate ctx (subset embd i n-eval) n-batch)
+		     as batch = (get-one-batch embd n-eval n-past 0)
+		     do (decode ctx batch)
 			(incf n-past n-eval)
 			(incf i n-eval))
 	       (setf (n embd) 0))
