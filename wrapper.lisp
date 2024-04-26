@@ -70,9 +70,14 @@
   ((seed :initarg :seed)
    (n-ctx :initarg :n-ctx)
    (n-batch :initarg :n-batch)
+   (n-ubatch :initarg :n-ubatch)
+   (n-seq-max :initarg :n-seq-max)
    (n-threads :initarg :n-threads)
    (n-threads-batch :initarg :n-threads-batch)
+
    (rope-scaling-type :initarg :rope-scaling-type)
+   (pooling-type :initarg :pooling-type)
+
    (rope-freq-base :initarg :rope-freq-base)
    (rope-freq-scale :initarg :rope-freq-scale)
    (yarn-ext-factor :initarg :yarn-ext-factor)
@@ -80,15 +85,19 @@
    (yarn-beta-fast :initarg :yarn-beta-fast)
    (yarn-beta-slow :initarg :yarn-beta-slow)
    (yarn-orig-ctx :initarg :yarn-orig-ctx)
+   (defrag-thold :initarg :defrag-thold)
+   
    (cb-eval :initarg :cb-eval)
    (cb-eval-user-data :initarg :cb-eval-user-data)
+
    (type-k :initarg :type-k)
-   (type-v :initarg :type-v)   
-   (mul-mat :initarg :mul-mat)
+   (type-v :initarg :type-v)
+
    (logits-all :initarg :logits-all)
    (embedding :initarg :embedding)
    (offload-kqv :initarg :offload-kqv)
-   (do-pooling :initarg :do-pooling)
+   (abort-callback :initarg :abort-callback)
+   (abort-callback-data :initarg :abort-callback-data)
    #+(or lispworks allegro) foreign-struct))
 
 (defun context-default-params ()
@@ -206,6 +215,20 @@
   (print-unreadable-object (obj stream :type t)
     (format stream "~A ~A" (desc obj) (file obj))))
 
+(defclass batch ()
+  ((n-tokens :initarg :n-tokens)
+   (token :initarg :token)
+   (embd :initarg :embd)
+   (pos :initarg :pos)
+
+   (n-seq-id :initarg :n-seq-id)
+   (seq-id :initarg :seq-id)
+   (logits :initarg :logits)
+
+   (all-pos-0 :initarg :all-pos-0)
+   (all-pos-1 :initarg :all-pos-1)
+   (all-seq-id :initarg :all-seq-id)))
+
 (defclass ctx ()
   ((model :initarg :model :accessor model)
    (params :initarg :params :accessor params
@@ -237,8 +260,42 @@
   (print-unreadable-object (obj stream :type t)
     (format stream "~A ~A" (model obj) (params obj))))
 
-(defmethod evaluate ((ctx ctx) tokens n-past &optional (threads 4))
-  (llama-eval (ptr ctx) (ptr tokens) (n tokens) n-past threads))
+(defun batch-add (batch id pos seq-ids logits)
+  ;; FIXME: support non-CFFI
+  (let ((n-tokens (slot-value batch 'n-tokens)))
+    (setf (cffi:mem-aref (slot-value batch 'token) :int32 n-tokens) id)
+    (setf (cffi:mem-aref (slot-value batch 'pos) :int32 n-tokens) pos)
+    (setf (cffi:mem-aref (slot-value batch 'n-seq-id) :int32 n-tokens)
+	  (length seq-ids))
+    (loop for seq-id in seq-ids
+	  for i from 0
+	  do
+	     (setf (cffi:mem-aref (cffi:mem-aref (slot-value batch 'seq-id) :pointer n-tokens)
+				  :int32
+				  i)
+		   seq-id))
+    (setf (cffi:mem-aref (slot-value batch 'logits) :int8 n-tokens) logits)
+    (incf (slot-value batch 'n-tokens))))
+
+(defun build-init-batch (tokens n-batch)
+  ;; FIXME: support non-CFFI
+  (loop with batch = (llama-batch-init n-batch 0 1)
+	with token-ids = (list-tokens tokens)
+	for id in token-ids
+	for pos from 0
+	do
+	   (batch-add batch id pos '(0) 0)
+	finally
+	   (setf (cffi:mem-aref (slot-value batch 'logits)
+				:int8
+				(1- (slot-value batch 'n-tokens)))
+		 1)
+	   (return batch)))
+
+(defmethod evaluate ((ctx ctx) tokens n-past n-batch &optional (threads 4))
+  ;; FIX: fix threads thing later
+  (let ((batch (build-init-batch tokens n-batch)))
+    (assert (= (llama-decode (ptr ctx) batch) 0))))
 
 (defclass tokens ()
   ((n :accessor n :initform 0)

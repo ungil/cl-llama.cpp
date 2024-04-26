@@ -68,7 +68,7 @@
   (let* ((mdl (make-instance 'mdl :file model :params (model-parameters :n-gpu-layers (if metal 1 0))))
 	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed)))
 	 (embd-inp (make-instance 'tokens :size n-ctx)))
-    ;; // tokenize the prompt    
+    ;; // tokenize the prompt
     (tokenize mdl embd-inp prompt :add-beginning-of-sentence add-beginning-of-sentence)
     (when (> (n embd-inp) (- n-ctx 4))
       (error "prompt too long (~D tokens, max ~D)" (n embd-inp) (- n-ctx 4)))
@@ -106,20 +106,20 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 		   (setf n-past (max 1 n-keep)) ;; // always keep the first token - BOS
 		   ;; // insert n_left/2 tokens at the start of embd from last_n_tokens
 		   ;; embd.insert(embd.begin(), last_n_tokens.begin() + n_ctx - n_left/2 - embd.size(), last_n_tokens.end() - embd.size());
-;;		   (format t "~& n-left: ~A  n-past: ~A  n-keep: ~A~&" n-left n-past n-keep)
+		   ;;		   (format t "~& n-left: ~A  n-past: ~A  n-keep: ~A~&" n-left n-past n-keep)
 		   (let (;;(current (loop for i below (n embd) collect (get-id embd i)))
 			 (extended (loop for i from (- (+ (n embd) (floor (/ n-left 2)))) to -1
 					 collect (elt (cb-content last-tokens) (+ n-ctx i)))))
-;;		     (format t "~A => ~A" current extended)
+		     ;;		     (format t "~A => ~A" current extended)
 		     (setf (n embd) 0)
 		     (loop for id in extended do (push-id embd id)))))
-;;	       (format t "~&embd: ~A~&" (list-tokens embd :limit nil))
+	       ;;	       (format t "~&embd: ~A~&" (list-tokens embd :limit nil))
                ;; // evaluate tokens in batches
                ;; // embd is typically prepared beforehand to fit within a batch, but not always
 	       (loop with i = 0
 		     while (< i (n embd))
 		     for n-eval = (min (- (n embd) i) n-batch)
-		     do (evaluate ctx (subset embd i n-eval) n-past threads)
+		     do (evaluate ctx (subset embd i n-eval) n-past n-batch threads)
 			(incf n-past n-eval)
 			(incf i n-eval))
 	       (setf (n embd) 0))
@@ -176,7 +176,7 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 		     ;; // decrement remaining sampling budget
 		     (decf n-remain)
 		     )))
-;;	     (format t "~&last-tokens: ~A~&" (cb-content last-tokens))
+	     ;;	     (format t "~&last-tokens: ~A~&" (cb-content last-tokens))
 	     ;; // display text
 	     (when (plusp id) (format stream "~A" (get-token ctx id)))
 	     ;; // end of text token

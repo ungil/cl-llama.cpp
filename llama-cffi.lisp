@@ -42,11 +42,14 @@
 
 (cffi:defctype llama-progress-callback :pointer)
 
-(cffi:defcstruct llama-batch
+(cffi:defcstruct (llama-batch :class c-batch)
   (n-tokens :int32)
-  (token llama-token)
+
+  (token (:pointer llama-token))
   (embd (:pointer :float))
-  (n-seq-id :int32)
+  (pos (:pointer llama-pos))
+
+  (n-seq-id (:pointer :int32))
   (seq-id (:pointer (:pointer llama-seq-id)))
   (logits (:pointer :int8))
 
@@ -60,7 +63,7 @@
 (cffi:defcstruct llama-model-kv-override)
 
 (cffi:defcstruct (llama-model-params :class c-model-params)
-    (n-gpu-layers :int)
+  (n-gpu-layers :int)
   (split-mode :int)
   (main-gpu :int)
   (tensor-split :pointer)
@@ -75,9 +78,14 @@
   (seed :int)
   (n-ctx :int)
   (n-batch :int)
+  (n-ubatch :int)
+  (n-seq-max :int)
   (n-threads :int)
   (n-threads-batch :int)
+
   (rope-scaling-type :int)
+  (pooling-type :int)
+
   (rope-freq-base :float)
   (rope-freq-scale :float)
   (yarn-ext-factor :float)
@@ -85,15 +93,20 @@
   (yarn-beta-fast :float)
   (yarn-beta-slow :float)
   (yarn-orig-ctx :int)
+  (defrag-thold :float)
+
   (cb-eval :pointer)
   (cb-eval-user-data :pointer)
+
   (type-k :int)
   (type-v :int)
-  (mul-mat :bool)
+
   (logits-all :bool)
   (embedding :bool)
   (offload-kqv :bool)
-  (do-pooling :bool))
+
+  (abort-callback :pointer)
+  (abort-callback-data :pointer))
 
 ;; llama_log_callback
 
@@ -127,7 +140,7 @@
 				 :vocab-only vocab-only :kv-overrides kv-overrides :use-mmap use-mmap :use-mlock use-mlock)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-model-params) ptr)
-  (cffi:with-foreign-slots ((n-gpu-layers main-gpu tensor-split progress-callback progress-callback-user-data
+  (cffi:with-foreign-slots ((n-gpu-layers split-mode main-gpu tensor-split progress-callback progress-callback-user-data
 					  vocab-only kv-overrides use-mmap use-mlock)
 			    ptr (:struct llama-model-params))
     (setf n-gpu-layers (slot-value value 'n-gpu-layers)
@@ -145,33 +158,50 @@
   (cffi:foreign-free ptr))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-context-params))
-  (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
-				  rope-scaling-type rope-freq-base rope-freq-scale
+  (cffi:with-foreign-slots ((seed n-ctx n-batch n-ubatch n-seq-max n-threads n-threads-batch
+				  rope-scaling-type pooling-type
+				  rope-freq-base rope-freq-scale
 				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
+				  defrag-thold
 				  cb-eval cb-eval-user-data
-				  type-k type-v mul-mat logits-all embedding offload-kqv do-pooling)
+				  type-k type-v
+				  logits-all embedding offload-kqv
+				  abort-callback abort-callback-data)
 			    ptr (:struct llama-context-params))
-    (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch :n-threads n-threads :n-threads-batch n-threads-batch
-				   :rope-scaling-type rope-scaling-type :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
+    (make-instance 'context-params :seed seed :n-ctx n-ctx :n-batch n-batch :n-ubatch n-ubatch :n-seq-max n-seq-max
+				   :n-threads n-threads :n-threads-batch n-threads-batch
+				   :rope-scaling-type rope-scaling-type :pooling-type pooling-type
+				   :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
 				   :yarn-ext-factor yarn-ext-factor :yarn-attn-factor yarn-attn-factor
 				   :yarn-beta-fast yarn-beta-fast :yarn-beta-slow yarn-beta-slow :yarn-orig-ctx yarn-orig-ctx
+				   :defrag-thold defrag-thold
 				   :cb-eval cb-eval :cb-eval-user-data cb-eval-user-data
 				   :type-k type-k :type-v type-v
-				   :mul-mat mul-mat :logits-all logits-all :embedding embedding :offload-kqv offload-kqv :do-pooling do-pooling)))
+				   :logits-all logits-all :embedding embedding :offload-kqv offload-kqv
+				   :abort-callback abort-callback :abort-callback-data abort-callback-data)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-context-params) ptr)
-  (cffi:with-foreign-slots ((seed n-ctx n-batch n-threads n-threads-batch
-				  rope-scaling-type rope-freq-base rope-freq-scale
-				  yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
+  (cffi:with-foreign-slots ((seed n-ctx n-batch n-ubatch n-seq-max n-threads n-threads-batch
+				  rope-scaling-type pooling-type
+				  rope-freq-base rope-freq-scale
+				  yarn-ext-factor yarn-attn-factor yarn-beta-fast
+				  yarn-beta-slow yarn-orig-ctx defrag-thold
 				  cb-eval cb-eval-user-data
-				  type-k type-v mul-mat logits-all embedding offload-kqv do-pooling)
+				  type-k type-v
+				  logits-all embedding offload-kqv
+				  abort-callback abort-callback-data)
 			    ptr (:struct llama-context-params))
     (setf seed (slot-value value 'seed)
 	  n-ctx (slot-value value 'n-ctx)
 	  n-batch (slot-value value 'n-batch)
+	  n-ubatch (slot-value value 'n-ubatch)
+	  n-seq-max (slot-value value 'n-seq-max)
 	  n-threads (slot-value value 'n-threads)
 	  n-threads-batch (slot-value value 'n-threads-batch)
+
 	  rope-scaling-type (slot-value value 'rope-scaling-type)
+	  pooling-type (slot-value value 'pooling-type)
+
 	  rope-freq-base (slot-value value 'rope-freq-base)
 	  rope-freq-scale (slot-value value 'rope-freq-scale)
 	  yarn-ext-factor (slot-value value 'yarn-ext-factor)
@@ -179,17 +209,49 @@
 	  yarn-beta-fast (slot-value value 'yarn-beta-fast)
 	  yarn-beta-slow (slot-value value 'yarn-beta-slow)
 	  yarn-orig-ctx (slot-value value 'yarn-orig-ctx)
+	  defrag-thold (slot-value value 'defrag-thold)
+
 	  cb-eval (slot-value value 'cb-eval)
 	  cb-eval-user-data (slot-value value 'cb-eval-user-data)
+
 	  type-k (slot-value value 'type-k)
 	  type-v (slot-value value 'type-v)
-	  mul-mat (slot-value value 'mul-mat)
+
 	  logits-all (slot-value value 'logits-all)
 	  embedding (slot-value value 'embedding)
 	  offload-kqv (slot-value value 'offload-kqv)
-	  do-pooling (slot-value value 'do-pooling))))
+
+	  abort-callback (slot-value value 'abort-callback)
+	  abort-callback-data (slot-value value 'abort-callback-data))))
 
 (defmethod cffi:free-translated-object (ptr (type c-context-params) param)
+  (cffi:foreign-free ptr))
+
+;; c-batch
+(defmethod cffi:translate-from-foreign (ptr (type c-batch))
+  (cffi:with-foreign-slots ((n-tokens token pos embd n-seq-id seq-id logits all-pos-0 all-pos-1
+				      all-seq-id)
+			    ptr (:struct llama-batch))
+    (make-instance 'batch :n-tokens n-tokens :token token :pos pos :embd embd :n-seq-id n-seq-id
+			  :seq-id seq-id :logits logits :all-pos-0 all-pos-0 :all-pos-1 all-pos-1
+			  :all-seq-id all-seq-id)))
+
+(defmethod cffi:translate-into-foreign-memory (value (type c-batch) ptr)
+  (cffi:with-foreign-slots ((n-tokens token pos embd n-seq-id seq-id logits all-pos-0 all-pos-1
+				      all-seq-id)
+			    ptr (:struct llama-batch))
+    (setf n-tokens (slot-value value 'n-tokens)
+	  token (slot-value value 'token)
+	  pos (slot-value value 'pos)
+	  embd (slot-value value 'embd)
+	  n-seq-id (slot-value value 'n-seq-id)
+	  seq-id (slot-value value 'seq-id)
+	  logits (slot-value value 'logits)
+	  all-pos-0 (slot-value value 'all-pos-0)
+	  all-pos-1 (slot-value value 'all-pos-1)
+	  all-seq-id (slot-value value 'all-seq-id))))
+
+(defmethod cffi:free-translated-object (ptr (type c-batch) param)
   (cffi:foreign-free ptr))
 
 (cffi:defcfun llama-model-default-params (:struct llama-model-params))
@@ -200,8 +262,16 @@
 
 (cffi:defcfun llama-backend-init :void)
 
+(cffi:defcenum ggml-numa-strategy
+  (:GGML-NUMA-STRATEGY-DISABLED    0)
+  (:GGML-NUMA-STRATEGY-DISTRIBUTE  1)
+  (:GGML-NUMA-STRATEGY-ISOLATE     2)
+  (:GGML-NUMA-STRATEGY-NUMACTL     3)
+  (:GGML-NUMA-STRATEGY-MIRROR      4)
+  (:GGML-NUMA-STRATEGY-COUNT       5))
+
 (cffi:defcfun llama-numa-init :void
-  (numa :int))
+  (numa ggml-numa-strategy))
 
 (cffi:defcfun llama-backend-free :void)
 
@@ -342,6 +412,11 @@
   (n-threads :int))
 
 ;; llama_batch_get_one
+(cffi:defcfun llama-batch-get-one (:struct llama-batch)
+  (tokens (:pointer llama-token))
+  (n-tokens :int32)
+  (pos-0 llama-pos)
+  (seq-id llama-seq-id))
 
 ;; llama_batch_init
 (cffi:defcfun llama-batch-init (:struct llama-batch)
@@ -354,6 +429,9 @@
   (batch (:struct llama-batch)))
 
 ;; llama_decode
+(cffi:defcfun llama-decode :int32
+  (ctx (:pointer (:struct llama-context)))
+  (batch (:struct llama-batch)))
 
 ;; llama_set_n_threads
 
@@ -577,5 +655,8 @@
 (cffi:defcfun llama-print-system-info :string)
 
 ;; llama_log_set
+(cffi:defcfun llama-log-set :void
+  (log-callback :pointer)
+  (user-data :pointer))
 
 ;; llama_dump_timing_info_yaml
