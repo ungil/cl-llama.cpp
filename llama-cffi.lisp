@@ -411,24 +411,20 @@
   (n-past :int)
   (n-threads :int))
 
-;; llama_batch_get_one
 (cffi:defcfun llama-batch-get-one (:struct llama-batch)
   (tokens (:pointer llama-token))
   (n-tokens :int32)
   (pos-0 llama-pos)
   (seq-id llama-seq-id))
 
-;; llama_batch_init
 (cffi:defcfun llama-batch-init (:struct llama-batch)
   (n-tokens :int32)
   (embd :int32)
   (n-seq-max :int32))
 
-;; llama_batch_free
 (cffi:defcfun llama-batch-free :void
   (batch (:struct llama-batch)))
 
-;; llama_decode
 (cffi:defcfun llama-decode :int32
   (ctx (:pointer (:struct llama-context)))
   (batch (:struct llama-batch)))
@@ -438,7 +434,6 @@
 (cffi:defcfun llama-get-logits (:pointer :float)
   (ctx (:pointer (:struct llama-context))))
 
-;; llama_get_logits_ith
 (cffi:defcfun llama-get-logits-ith (:pointer :float)
   (ctx (:pointer (:struct llama-context)))
   (i :int32))
@@ -493,7 +488,7 @@
 (cffi:defcfun llama-tokenize :int
   (model (:pointer (:struct llama-model)))
   (text :string)
-  (text-len :int)  
+  (text-len :int)
   (tokens (:pointer llama-token))
   (n-max-tokens :int)
   (add-bos :bool)
