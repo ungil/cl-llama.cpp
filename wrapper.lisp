@@ -1,5 +1,6 @@
 (in-package :llama)
 
+(defconstant +default-piece-size+ 8)
 (defvar *lib* (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so"))
 
 (unless (probe-file *lib*)
@@ -390,6 +391,24 @@
    #+lispworks (fli:convert-from-foreign-string (llama-token-get-text (ptr mdl) id)
 						:external-format :utf-8)
    #-lispworks (llama-token-get-text (ptr mdl) id)))
+
+(defmethod to-piece ((ctx ctx) id)
+  (to-piece (model ctx) id))
+
+(defmethod to-piece ((mdl mdl) id)
+  ;; FIXME: support lispworks
+  (let* ((buf-size +default-piece-size+)
+	 (buf (cffi:foreign-alloc :char :count buf-size))
+	 (n-tokens (llama-token-to-piece (ptr mdl) id buf buf-size)))
+    (when (< n-tokens 0)
+      (cffi:foreign-free buf)
+      (setq buf-size (- n-tokens))
+      (setq buf (cffi:foreign-alloc :char :count buf-size))
+      (let ((check (llama-token-to-piece (ptr mdl) id buf buf-size)))
+	(assert (= check (- n-tokens)))
+	(setq n-tokens check)))
+    (prog1 (cffi:foreign-string-to-lisp buf :count n-tokens)
+      (cffi:foreign-free buf))))
 
 (defmethod get-vocab ((ctx ctx))
   (loop for id below (n-vocab (model ctx)) collect (get-token ctx id)))

@@ -182,7 +182,9 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 		     )))
 	     ;;	     (format t "~&last-tokens: ~A~&" (cb-content last-tokens))
 	     ;; // display text
-	     (when (plusp id) (format stream "~A" (get-token ctx id)))
+	     (when (plusp id)
+	       (princ (to-piece ctx id) stream)
+	       (force-output stream))
 	     ;; // end of text token
 	     (when (equal id (token-eos ctx))
 	       (format stream " [end of text]~&")
