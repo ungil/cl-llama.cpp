@@ -13,6 +13,8 @@
 
 (defparameter *threads* 4)
 
+(defparameter *threads-batch* 4)
+
 (defparameter *predict* -1)
 
 (defparameter *n-ctx* 512)

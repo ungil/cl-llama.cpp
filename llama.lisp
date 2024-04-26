@@ -55,7 +55,8 @@
   #-(or lispworks allegro) (setf (cffi:mem-aref (ptr tok) :int (n tok)) id)
   (incf (n tok)))
 
-(defun llama (&key (prompt "A") (predict *predict*) (model *model*) (threads *threads*) (verbose 0) ;; (numa *numa*)
+(defun llama (&key (prompt "A") (predict *predict*) (model *model*) (threads *threads*) (threads-batch *threads-batch*)
+		(verbose 0) ;; (numa *numa*)
 		(stream t) (metal *metal*) (seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
 		(top-k *top-k*) (tfs-z *tfs-z*) (top-p *top-p*) (typical-p *typical-p*) (temp *temp*)
 		(mirostat *mirostat*) (mirostat-eta *mirostat-eta*) (mirostat-tau *mirostat-tau*)
@@ -66,7 +67,9 @@
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
   (llama-backend-init)
   (let* ((mdl (make-instance 'mdl :file model :params (model-parameters :n-gpu-layers (if metal 1 0))))
-	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed)))
+	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed
+									 :n-threads threads
+									 :n-threads-batch threads-batch)))
 	 (embd-inp (make-instance 'tokens :size n-ctx)))
     ;; // tokenize the prompt
     (tokenize mdl embd-inp prompt :add-beginning-of-sentence add-beginning-of-sentence)
@@ -119,7 +122,7 @@ top-k=~D tfs-z=~F top-p=~F typycal-p=~F temp=~F mirostat=~D mirostat-lr=~D miros
 	       (loop with i = 0
 		     while (< i (n embd))
 		     for n-eval = (min (- (n embd) i) n-batch)
-		     do (evaluate ctx (subset embd i n-eval) n-past n-batch threads)
+		     do (evaluate ctx (subset embd i n-eval) n-batch)
 			(incf n-past n-eval)
 			(incf i n-eval))
 	       (setf (n embd) 0))

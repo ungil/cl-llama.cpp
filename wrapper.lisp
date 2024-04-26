@@ -292,8 +292,7 @@
 		 1)
 	   (return batch)))
 
-(defmethod evaluate ((ctx ctx) tokens n-past n-batch &optional (threads 4))
-  ;; FIX: fix threads thing later
+(defmethod evaluate ((ctx ctx) tokens n-batch)
   (let ((batch (build-init-batch tokens n-batch)))
     (assert (= (llama-decode (ptr ctx) batch) 0))))
 
