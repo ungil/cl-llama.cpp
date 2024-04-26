@@ -7,12 +7,12 @@
   (get-embeddings ctx))
 
 (defun embedding (prompt &key (model *model*) (n-ctx *n-ctx*) (ntokens n-ctx) (verbose 0) ;; (numa *numa*)
-			   (add-beginning-of-sentence t) (threads *threads*) (metal *metal*))
+			   (add-beginning-of-sentence t) (threads *threads*) (ngl *ngl*))
   "Calculate embeddings for the given prompt. If passed a list of prompts it will loop over them."
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
   (llama-backend-init)
   (let* ((mdl (make-instance 'mdl :file model
-				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
+				  :params (model-parameters :n-gpu-layers ngl)))
 	 (ctx (make-instance 'ctx :model mdl
 				  :params (context-parameters :embedding t :n-ctx n-ctx)))
 	 (tokens (make-instance 'tokens :size ntokens)))

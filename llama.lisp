@@ -57,7 +57,7 @@
 
 (defun llama (&key (prompt "A") (predict *predict*) (model *model*) (threads *threads*) (threads-batch *threads-batch*)
 		(verbose 0) ;; (numa *numa*)
-		(stream t) (metal *metal*) (seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
+		(stream t) (ngl *ngl*) (seed (random (expt 2 30))) (n-ctx *n-ctx*) (n-batch *n-batch*) (n-keep *n-keep*)
 		(top-k *top-k*) (tfs-z *tfs-z*) (top-p *top-p*) (typical-p *typical-p*) (temp *temp*)
 		(mirostat *mirostat*) (mirostat-eta *mirostat-eta*) (mirostat-tau *mirostat-tau*)
 		(repeat-last-n *repeat-last-n*) (repeat-penalty *repeat-penalty*)
@@ -66,7 +66,8 @@
   (assert (<= n-ctx *max-ctx*))
   #+sbcl (sb-ext::set-floating-point-modes :traps nil)
   (llama-backend-init)
-  (let* ((mdl (make-instance 'mdl :file model :params (model-parameters :n-gpu-layers (if metal 1 0))))
+  (llama-numa-init (cffi:foreign-enum-value 'ggml-numa-strategy :ggml-numa-strategy-disabled))
+  (let* ((mdl (make-instance 'mdl :file model :params (model-parameters :n-gpu-layers ngl)))
 	 (ctx (make-instance 'ctx :model mdl :params (context-parameters :n-ctx n-ctx :seed seed
 									 :n-threads threads
 									 :n-threads-batch threads-batch)))
