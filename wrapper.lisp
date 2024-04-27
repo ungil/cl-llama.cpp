@@ -1,5 +1,6 @@
 (in-package :llama)
 
+(defconstant +default-piece-size+ 8)
 (defvar *lib* (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so"))
 
 (unless (probe-file *lib*)
@@ -70,9 +71,14 @@
   ((seed :initarg :seed)
    (n-ctx :initarg :n-ctx)
    (n-batch :initarg :n-batch)
+   (n-ubatch :initarg :n-ubatch)
+   (n-seq-max :initarg :n-seq-max)
    (n-threads :initarg :n-threads)
    (n-threads-batch :initarg :n-threads-batch)
+
    (rope-scaling-type :initarg :rope-scaling-type)
+   (pooling-type :initarg :pooling-type)
+
    (rope-freq-base :initarg :rope-freq-base)
    (rope-freq-scale :initarg :rope-freq-scale)
    (yarn-ext-factor :initarg :yarn-ext-factor)
@@ -80,15 +86,19 @@
    (yarn-beta-fast :initarg :yarn-beta-fast)
    (yarn-beta-slow :initarg :yarn-beta-slow)
    (yarn-orig-ctx :initarg :yarn-orig-ctx)
+   (defrag-thold :initarg :defrag-thold)
+   
    (cb-eval :initarg :cb-eval)
    (cb-eval-user-data :initarg :cb-eval-user-data)
+
    (type-k :initarg :type-k)
-   (type-v :initarg :type-v)   
-   (mul-mat :initarg :mul-mat)
+   (type-v :initarg :type-v)
+
    (logits-all :initarg :logits-all)
    (embedding :initarg :embedding)
    (offload-kqv :initarg :offload-kqv)
-   (do-pooling :initarg :do-pooling)
+   (abort-callback :initarg :abort-callback)
+   (abort-callback-data :initarg :abort-callback-data)
    #+(or lispworks allegro) foreign-struct))
 
 (defun context-default-params ()
@@ -206,6 +216,20 @@
   (print-unreadable-object (obj stream :type t)
     (format stream "~A ~A" (desc obj) (file obj))))
 
+(defclass batch ()
+  ((n-tokens :initarg :n-tokens)
+   (token :initarg :token)
+   (embd :initarg :embd)
+   (pos :initarg :pos)
+
+   (n-seq-id :initarg :n-seq-id)
+   (seq-id :initarg :seq-id)
+   (logits :initarg :logits)
+
+   (all-pos-0 :initarg :all-pos-0)
+   (all-pos-1 :initarg :all-pos-1)
+   (all-seq-id :initarg :all-seq-id)))
+
 (defclass ctx ()
   ((model :initarg :model :accessor model)
    (params :initarg :params :accessor params
@@ -237,8 +261,45 @@
   (print-unreadable-object (obj stream :type t)
     (format stream "~A ~A" (model obj) (params obj))))
 
-(defmethod evaluate ((ctx ctx) tokens n-past &optional (threads 4))
-  (llama-eval (ptr ctx) (ptr tokens) (n tokens) n-past threads))
+(defun batch-add (batch id pos seq-ids logits)
+  ;; FIXME: support non-CFFI
+  (let ((n-tokens (slot-value batch 'n-tokens)))
+    (setf (cffi:mem-aref (slot-value batch 'token) :int32 n-tokens) id)
+    (setf (cffi:mem-aref (slot-value batch 'pos) :int32 n-tokens) pos)
+    (setf (cffi:mem-aref (slot-value batch 'n-seq-id) :int32 n-tokens)
+	  (length seq-ids))
+    (loop for seq-id in seq-ids
+	  for i from 0
+	  do
+	     (setf (cffi:mem-aref (cffi:mem-aref (slot-value batch 'seq-id) :pointer n-tokens)
+				  :int32
+				  i)
+		   seq-id))
+    (setf (cffi:mem-aref (slot-value batch 'logits) :int8 n-tokens) logits)
+    (incf (slot-value batch 'n-tokens))))
+
+(defun build-init-batch (tokens n-batch)
+  ;; FIXME: support non-CFFI
+  (loop with batch = (llama-batch-init n-batch 0 1)
+	with token-ids = (list-tokens tokens)
+	for id in token-ids
+	for pos from 0
+	do
+	   (batch-add batch id pos '(0) 0)
+	finally
+	   (setf (cffi:mem-aref (slot-value batch 'logits)
+				:int8
+				(1- (slot-value batch 'n-tokens)))
+		 1)
+	   (return batch)))
+
+(defmethod evaluate ((ctx ctx) tokens n-batch)
+  (let ((batch (build-init-batch tokens n-batch)))
+    (assert (= (llama-decode (ptr ctx) batch) 0))
+    (llama-batch-free batch)))
+
+(defmethod decode ((ctx ctx) batch)
+  (assert (= (llama-decode (ptr ctx) batch) 0)))
 
 (defclass tokens ()
   ((n :accessor n :initform 0)
@@ -290,6 +351,10 @@
 	   (add (max 0 (- (n obj) limit))))
       (format stream "~A and ~D tokens more" ids add))))
 
+(defmethod get-one-batch ((toks tokens) n-tokens pos-0 seq-id)
+  ;; FIXME: other FFI
+  (llama-batch-get-one (ptr toks) n-tokens pos-0 seq-id))
+
 (defmethod tokenize ((mdl mdl) (tok fixnum) text &key add-beginning-of-sentence special)
   (tokenize mdl (make-instance 'tokens :size tok)
 	    text :add-beginning-of-sentence add-beginning-of-sentence :special special))
@@ -333,6 +398,33 @@
    #+lispworks (fli:convert-from-foreign-string (llama-token-get-text (ptr mdl) id)
 						:external-format :utf-8)
    #-lispworks (llama-token-get-text (ptr mdl) id)))
+
+(defmethod to-piece ((ctx ctx) id)
+  (to-piece (model ctx) id))
+
+(defmethod to-piece ((mdl mdl) id)
+  ;; FIXME: support lispworks
+  (let* ((buf-size +default-piece-size+)
+	 (buf (cffi:foreign-alloc :char :count buf-size))
+	 (n-tokens (llama-token-to-piece (ptr mdl) id buf buf-size)))
+    (when (< n-tokens 0)
+      (cffi:foreign-free buf)
+      (setq buf-size (- n-tokens))
+      (setq buf (cffi:foreign-alloc :char :count buf-size))
+      (let ((check (llama-token-to-piece (ptr mdl) id buf buf-size)))
+	(assert (= check (- n-tokens)))
+	(setq n-tokens check)))
+    (prog1 (cffi:foreign-string-to-lisp buf :count n-tokens)
+      (cffi:foreign-free buf))))
+
+(defmethod print-prompt ((ctx ctx) tokens stream)
+  (print-prompt (model ctx) tokens stream))
+
+(defmethod print-prompt ((mdl mdl) tokens stream)
+  (dolist (token-id (list-tokens tokens))
+    (princ (to-piece mdl token-id) stream))
+  (terpri stream)
+  (force-output stream))
 
 (defmethod get-vocab ((ctx ctx))
   (loop for id below (n-vocab (model ctx)) collect (get-token ctx id)))
