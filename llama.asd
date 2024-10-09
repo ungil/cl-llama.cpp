@@ -9,12 +9,14 @@
     :depends-on (:trivial-garbage #-(or lispworks allegro) :cffi #-(or lispworks allegro) :cffi-libffi)
     :serial t
     :components ((:file "package")
+		 (:file "libllama")
+		 (:file #-(or lispworks allegro) "llama-cffi" #+lispworks "llama-dff" #+allegro "llama-ff")
 		 (:file "wrapper")
 		 (:file "circular-buffer")
 		 (:file "defaults")
 		 (:file "embedding")
 		 (:file "perplexity")		 
-		 (:file "llama")))
+		 (:file "simple")))
 
 (defsystem #:llama/test
     :name "llama test suite"

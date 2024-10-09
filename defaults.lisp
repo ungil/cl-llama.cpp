@@ -1,13 +1,11 @@
 (in-package :llama)
 
-(defvar *metal* (stringp (ignore-errors
-			  #+(or ARM ARM64)
-			  (uiop:run-program (format nil "otool -L ~A | grep Metal" *lib*)
-					    :force-shell t :output :string))))
+(defparameter *metal* (gpu-offload-supported))
 
-;; (defparameter *numa* t)
+(defparameter *numa* 0) ;; 0 disabled - 1 distribute - 2 isolate - 3 numactl - 4 mirror
 
-(defparameter *model* (truename "~/llama.cpp/models/7B/ggml-model-f16.gguf"))
+;; https://huggingface.co/QuantFactory/Meta-Llama-3-8B-GGUF-v2/blob/main/Meta-Llama-3-8B.Q4_1.gguf
+(defparameter *model* (truename "~/llama.cpp/models/Meta-Llama-3-8B.Q4_1.gguf"))
 
 (defparameter *max-ctx* 2048)
 
@@ -15,9 +13,9 @@
 
 (defparameter *predict* -1)
 
-(defparameter *n-ctx* 512)
+(defparameter *n-batch* 2048)
 
-(defparameter *n-batch* 512)
+(defparameter *n-ubatch* 512)
 
 (defparameter *n-keep* 0)
 
@@ -46,4 +44,3 @@
 (defparameter *mirostat-tau* 5.0) ;; target entropy
 
 (defparameter *mirostat-eta* 0.1) ;; learning rate
-

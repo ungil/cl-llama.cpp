@@ -1,37 +1,77 @@
 (in-package :llama)
 
-(defun %embedding (ctx tokens txt verbose add-beginning-of-sentence threads)
-  (tokenize (model ctx) tokens txt :add-beginning-of-sentence add-beginning-of-sentence)
-  (when (> verbose 0) (print (list-tokens tokens :context ctx :limit nil)))  
-  (evaluate ctx tokens 0 threads) ;; n-past = 0
-  (get-embeddings ctx))
+(defun normalize-embeddings (input)
+  (assert input)
+  (let* ((sum (loop for x across input sum (* x x)))
+	 (norm (if (> sum 0.0) (/ 1.0 (sqrt sum)) 0.0)))
+    (loop for i below (length input)
+	  do (setf (aref input i) (* (aref input i) norm)))
+    input))
 
-(defun embedding (prompt &key (model *model*) (n-ctx *n-ctx*) (ntokens n-ctx) (verbose 0) ;; (numa *numa*)
+(defun %embedding (ctx tokens txt verbose)
+  (tokenize (model ctx) tokens txt :add-special t)
+  ;; add SEP if not present
+#+NIL  (unless (= (token ctx :sep)
+	     #+lispworks (fli:dereference (ptr tokens) :index (1- (n tokens)))
+	     #+allegro (ff:fslot-value (ptr tokens) (1- (n tokens)))
+	     #-(or lispworks allegro) (cffi:mem-aref (ptr tokens) :int (1- (n tokens))))
+    (when (= (n tokens) (size tokens)) (error "cannot add a token"))
+    (setf #+lispworks (fli:dereference (ptr tokens) :index (n tokens))
+	  #+allegro (ff:fslot-value (ptr tokens) (n tokens))
+	  #-(or lispworks allegro) (cffi:mem-aref (ptr tokens) :int (n tokens))
+	  (token ctx :sep))
+    (incf (n tokens)))
+  (when (> verbose 0)
+    (describe tokens)
+    (print (list-tokens tokens))
+    (print (list-tokens tokens :context ctx :limit nil)))
+  (let ((batch (make-instance 'batch :n-tokens-max (n tokens))))
+    (loop for token in (list-tokens tokens)
+	  for pos from 0
+	  do (add batch token pos t))
+    (decode ctx batch :clear t) ;; previous kv_cache values irrelevant for embeddings
+    (normalize-embeddings (get-embeddings-seq ctx 0))))
+
+(defun embedding (prompt &key (pooling-type :mean) (model *model*) (n-batch *n-batch*) (n-ubatch *n-ubatch*)
+			   (ntokens 512) (verbose 0) (numa *numa*)
 			   (add-beginning-of-sentence t) (threads *threads*) (metal *metal*))
   "Calculate embeddings for the given prompt. If passed a list of prompts it will loop over them."
-  #+sbcl (sb-ext::set-floating-point-modes :traps nil)
+  #+sbcl (sb-int:set-floating-point-modes :traps nil)
   (llama-backend-init)
+  (llama-numa-init numa)
   (let* ((mdl (make-instance 'mdl :file model
 				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
 	 (ctx (make-instance 'ctx :model mdl
-				  :params (context-parameters :embedding t :n-ctx n-ctx)))
+				  :params (context-parameters :embeddings t :n-batch n-batch
+							      :pooling-type (case pooling-type
+									      (:mean 1)
+									      (:cls 2)
+									      (:last 3)))))
 	 (tokens (make-instance 'tokens :size ntokens)))
+    (assert (>= (n-ctx-train mdl) (n-ctx ctx)))
+    (assert (not (equal (pooling-type ctx) :none)))
+    (when (> verbose 1) (print (pooling-type ctx)))
     (prog1
 	(if (listp prompt)
 	    (loop for text in prompt
 		  do (format t ".")
-		  collect (%embedding ctx tokens text verbose add-beginning-of-sentence threads))
-	    (%embedding ctx tokens prompt verbose add-beginning-of-sentence threads))
-      (when (> verbose 1) (print-timings ctx)))))
+		  collect (%embedding ctx tokens text verbose))
+	    (%embedding ctx tokens prompt verbose))
+      (when (> verbose 1) (print-timings ctx))
+      (llama-backend-free))))
 
-;; ./embedding -p "testing" -ngl 1 | head -c 28
-;; 1.382774 -1.671184 0.820016 %
+;; In examples/embedding/embedding.cpp need to add the following line before    print_build_info();
+;;    params.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+;; and recompile - by default LLAMA_POOLING_TYPE_NONE is used because the gguf doesn't specify anything?
 
-;; (subseq (embedding "testing" :metal t) 0 3)
-;; #(1.3827736 -1.6711841 0.82001567)
+;; ./llama-embedding -m ~/llama.cpp/models/gemma-2-9b-it-Q6_K_L.gguf -p "testing" -ngl 1 | head -c 44
+;; embedding 0:  0.002747 -0.039240 -0.002686
 
-;; ./embedding -p "testing" -ngl 0 | head -c 28
-;; 1.387524 -1.680799 0.815600
+;; ./llama-embedding -m ~/llama.cpp/models/gemma-2-9b-it-Q6_K_L.gguf -p "testing" -ngl -0 | head -c 44
+;; embedding 0:  0.002605 -0.041040 -0.002475 %
 
-;; (subseq (embedding "testing" :metal nil) 0 3)
-;; #(1.3875245 -1.680799 0.8155995)
+;; (subseq (embedding "testing" :model "~/llama.cpp/models/gemma-2-9b-it-Q6_K_L.gguf" :metal t) 0 3)
+;; #(0.0027472726 -0.03923983 -0.002686364)
+
+;; (subseq (embedding "testing" :model "~/llama.cpp/models/gemma-2-9b-it-Q6_K_L.gguf" :metal nil) 0 3)
+;; #(0.0026047684 -0.04103954 -0.002475477)
