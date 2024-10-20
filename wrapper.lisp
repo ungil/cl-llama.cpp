@@ -500,9 +500,9 @@
     (:nl (llama-token-nl (ptr mdl)))
     (:cls (llama-token-cls (ptr mdl)))
     (:sep (llama-token-sep (ptr mdl)))
-    (:prefix (llama-token-prefix (ptr mdl)))
-    (:middle (llama-token-middle (ptr mdl)))
-    (:suffix (llama-token-suffix (ptr mdl)))
+    (:prefix (llama-token-fim-pre (ptr mdl)))
+    (:middle (llama-token-fim-mid (ptr mdl)))
+    (:suffix (llama-token-fim-suf (ptr mdl)))
     (:eot (llama-token-eot (ptr mdl)))))
 
 (defmethod token-is-eog ((mdl mdl) id)

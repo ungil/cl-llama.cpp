@@ -108,21 +108,26 @@
 
 (5am:test (embedding :depends-on metal)
   (5am:is (equalp #+(or ARM ARM64 AARCH64) #(0.0027472726 -0.03923983 -0.002686364)
-		  #-(or ARM ARM64 AARCH64) #(0.0028596406 -0.03940781 -0.0031085624)
+		  #-(or LINUX ARM ARM64 AARCH64) #(0.0028596406 -0.03940781 -0.0031085624)
+		  #+LINUX #(0.00355976 -0.039729998 -0.0036821505)
 		  (subseq (embedding "testing" :model *test-model-embedding*) 0 3))))
 
 (5am:test embedding-no-metal
   (5am:is (equalp #+(or ARM ARM64 AARCH64) #(0.0026047684 -0.04103954 -0.002475477)		 
-		  #-(or ARM ARM64 AARCH64) #(0.0031177837 -0.04023566 -0.00362199)
+		  #-(or LINUX ARM ARM64 AARCH64) #(0.0031177837 -0.04023566 -0.00362199)
+		  #+LINUX #(0.0036606288 -0.04072999 -0.0033451244)
 		  (subseq (embedding "testing" :model *test-model-embedding* :metal nil) 0 3))))
 
 (5am:test (embeddings :depends-on metal)
   (5am:is (equalp #+(or ARM ARM64 AARCH64) '(#(0.0027472726 -0.03923983 -0.002686364)
 					     #(-0.00230485 -0.03767107 0.0024707825)
 					     #(0.0027472726 -0.03923983 -0.002686364))
-		  #-(or ARM ARM64 AARCH64) '(#(0.0028596406 -0.03940781 -0.0031085624)
-					     #(-0.002174724 -0.037758734 0.0031787835)
-					     #(0.0028596406 -0.03940781 -0.0031085624))
+		  #-(or LINUX ARM ARM64 AARCH64) '(#(0.0028596406 -0.03940781 -0.0031085624)
+						   #(-0.002174724 -0.037758734 0.0031787835)
+						   #(0.0028596406 -0.03940781 -0.0031085624))
+		  #+LINUX '(#(0.00355976 -0.039729998 -0.0036821505)
+			    #(-0.0020913247 -0.037312973 0.0023225711)
+			    #(0.00355976 -0.039729998 -0.0036821505))
 		  (mapcar (lambda (x) (subseq x 0 3)) (embedding '("testing" "something else" "testing")
 								 :model *test-model-embedding*)))))
 
@@ -130,34 +135,40 @@
   (5am:is (equalp #+(or ARM ARM64 AARCH64) '(#(0.0026047684 -0.04103954 -0.002475477)
 					     #(-0.0024215174 -0.038562134 0.002473093)
 					     #(0.0026047684 -0.04103954 -0.002475477))
-		  #-(or ARM ARM64 AARCH64) '(#(0.0031177837 -0.04023566 -0.00362199)
-					     #(-0.002250815 -0.038325872 0.0030096115)
-					     #(0.0031177837 -0.04023566 -0.00362199))
+		  #-(or LINUX ARM ARM64 AARCH64) '(#(0.0031177837 -0.04023566 -0.00362199)
+						   #(-0.002250815 -0.038325872 0.0030096115)
+						   #(0.0031177837 -0.04023566 -0.00362199))
+		  #+LINUX '(#(0.0036606288 -0.04072999 -0.0033451244)
+			    #(-0.0019625456 -0.037582934 0.0021264562)
+			    #(0.0036606288 -0.04072999 -0.0033451244))
 		  (mapcar (lambda (x) (subseq x 0 3)) (embedding '("testing" "something else" "testing")
 								 :model *test-model-embedding* :metal nil)))))
 
 (5am:test (perplexity :depends-on metal)
   (5am:is (= #+(or ARM ARM64 AARCH64) 1.2597692
-	     #-(or ARM ARM64 AARCH64) 1.2595763
+	     #-(or LINUX ARM ARM64 AARCH64) 1.2595763
+	     #+LINUX 1.2502482
 	     (perplexity (apply #'concatenate 'string
 				(with-open-file (in (asdf:system-relative-pathname (asdf:find-system :llama) "LICENSE")
 						    :external-format :utf-8 :element-type 'character)
 				  (loop for line = (read-line in nil nil)
 					while line append (list line line line line))))
-			 :verbose 0))))
+			 :model *test-model* :verbose 0))))
 
 (5am:test perplexity-no-metal
   (5am:is (= #+(or ARM ARM64 AARCH64) 1.2597548
-	     #-(or ARM ARM64 AARCH64) 1.2595822
+	     #-(or LINUX ARM ARM64 AARCH64) 1.2595822
+	     #+LINUX 1.2502482
 	     (perplexity (apply #'concatenate 'string
 				(with-open-file (in (asdf:system-relative-pathname (asdf:find-system :llama) "LICENSE")
 						    :external-format :utf-8 :element-type 'character)
 				  (loop for line = (read-line in nil nil)
 					while line append (list line line line line))))
-			 :metal nil :verbose 0))))
+			 :metal nil :model *test-model* :verbose 0))))
 
 (5am:test simple
-  (5am:is (equalp "Hello my name is {name} and I am {age} years old. I am currently studying {course} at {university}. My hobbies include {"
+  (5am:is (equalp #-LINUX "Hello my name is {name} and I am {age} years old. I am currently studying {course} at {university}. My hobbies include {"
+		  #+LINUX "Hello my name is {name} and I am {age} years old. I am currently studying at {school} and my favorite subject is {subject}."
 		  (simple :model *model* :print-while-generating nil :print-timings nil))))
 
 #+NIL

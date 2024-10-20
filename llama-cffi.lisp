@@ -42,10 +42,7 @@
   (pos (:pointer llama-pos))
   (n-seq-id (:pointer :int))
   (seq-id (:pointer (:pointer llama-seq-id)))
-  (logits (:pointer :int8))
-  (all-pos-0 llama-pos)
-  (all-pos-1 llama-pos)
-  (all-seq-id llama-seq-id))
+  (logits (:pointer :int8)))
 
 ;; llama_model_kv_override_type
 ;; (cffi:defcstruct llama-model-kv-override)
@@ -234,12 +231,12 @@
   (cffi:foreign-free ptr))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-batch))
-  (cffi:with-foreign-slots ((n-tokens token embd pos n-seq-id seq-id logits all-pos-0 all-pos-1 all-seq-id)
+  (cffi:with-foreign-slots ((n-tokens token embd pos n-seq-id seq-id logits)
 			    ptr (:struct llama-batch))
-    (list n-tokens token embd pos n-seq-id seq-id logits all-pos-0 all-pos-1 all-seq-id)))
+    (list n-tokens token embd pos n-seq-id seq-id logits)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-batch) ptr)
-  (cffi:with-foreign-slots ((n-tokens token embd pos n-seq-id seq-id logits all-pos-0 all-pos-1 all-seq-id)
+  (cffi:with-foreign-slots ((n-tokens token embd pos n-seq-id seq-id logits)
 			    ptr (:struct llama-batch))
     (setf n-tokens (elt value 0)
 	  token (elt value 1)
@@ -247,10 +244,7 @@
 	  pos (elt value 3)
 	  n-seq-id (elt value 4)
 	  seq-id (elt value 5)	  
-	  logits (elt value 6)
-	  all-pos-0 (elt value 7)
-	  all-pos-1 (elt value 8)
-	  all-seq-id (elt value 9))))
+	  logits (elt value 6))))
 
 (defmethod cffi:free-translated-object (ptr (type c-batch) param)
   (cffi:foreign-free ptr))
@@ -303,6 +297,8 @@
 (cffi:defcfun llama-supports-mlock :boolean)
 
 (cffi:defcfun llama-supports-gpu-offload :boolean)
+
+(cffi:defcfun llama-supports-rpc :boolean)
 
 (cffi:defcfun llama-n-ctx :int
   (ctx (:pointer (:struct llama-context))))
@@ -467,9 +463,7 @@
 
 (cffi:defcfun llama-batch-get-one (:struct llama-batch)
   (tokens (:pointer llama-token))
-  (n-tokens :int32)
-  (pos-0 llama-pos)
-  (seq-id llama-seq-id))
+  (n-tokens :int32))
 
 (cffi:defcfun llama-batch-init (:struct llama-batch)
   (n-tokens :int32)
@@ -560,6 +554,9 @@
 (cffi:defcfun llama-token-eos llama-token
   (model (:pointer (:struct llama-model))))
 
+(cffi:defcfun llama-token-eot llama-token
+  (model (:pointer (:struct llama-model))))
+
 (cffi:defcfun llama-token-cls llama-token
   (model (:pointer (:struct llama-model))))
 
@@ -578,16 +575,22 @@
 (cffi:defcfun llama-add-eos-token :int
   (model (:pointer (:struct llama-model))))
 
-(cffi:defcfun llama-token-prefix llama-token
+(cffi:defcfun llama-token-fim-pre llama-token
   (model (:pointer (:struct llama-model))))
 
-(cffi:defcfun llama-token-middle llama-token
+(cffi:defcfun llama-token-fim-suf llama-token
   (model (:pointer (:struct llama-model))))
 
-(cffi:defcfun llama-token-suffix llama-token
+(cffi:defcfun llama-token-fim-mid llama-token
   (model (:pointer (:struct llama-model))))
 
-(cffi:defcfun llama-token-eot llama-token
+(cffi:defcfun llama-token-fim-pad llama-token
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-token-fim-rep llama-token
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-token-fim-sep llama-token
   (model (:pointer (:struct llama-model))))
 
 ;; Tokenization
@@ -707,6 +710,12 @@
   (delta :float)
   (exponent :float))
 
+(cffi:defcfun llama-sampler-init-xtc (:pointer (:struct llama-sampler))
+  (p :float)
+  (temp :float)
+  (min-keep :unsigned-long)
+  (seed :unsigned-int))
+
 (cffi:defcfun llama-sampler-init-mirostat (:pointer (:struct llama-sampler))
   (n-vocab :int)
   (seed :unsigned-int)
@@ -739,6 +748,9 @@
   (n-vocab :int)
   (n-logit-bias :int)
   (logit-bias (:pointer (:struct llama-logit-bias))))
+
+(cffi:defcfun llama-sampler-init-infill (:pointer (:struct llama-sampler))
+  (model (:pointer (:struct llama-model))))
 
 (cffi:defcfun llama-sampler-get-seed :unsigned-int
   (smpl (:pointer (:struct llama-sampler))))

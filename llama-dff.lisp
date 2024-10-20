@@ -44,10 +44,7 @@
   (pos (:pointer llama-pos))
   (n-seq-id (:pointer :int))
   (seq-id (:pointer (:pointer llama-seq-id)))
-  (logits (:pointer :int8))
-  (all-pos-0 llama-pos)
-  (all-pos-1 llama-pos)
-  (all-seq-id llama-seq-id))
+  (logits (:pointer :int8)))
 
 ;; llama_model_kv_override_type
 ;; (fli:define-c-struct (llama-batch (:foreign-name "llama_model_kv_override")))
@@ -195,6 +192,10 @@
   :result-type (:boolean :byte))
 
 (fli:define-foreign-function (llama-supports-gpu-offload "llama_supports_gpu_offload")
+  nil
+  :result-type (:boolean :byte))
+
+(fli:define-foreign-function (llama-supports-rpc "llama_supports_rpc")
   nil
   :result-type (:boolean :byte))
 
@@ -384,9 +385,7 @@
 
 (fli:define-foreign-function (llama-batch-get-one "llama_batch_get_one")
     ((tokens (:pointer llama-token))
-     (n-tokens :int)
-     (pos-0 llama-pos)
-     (seq-id llama-seq-id))
+     (n-tokens :int))
   :result-type (:struct llama-batch))
 
 (fli:define-foreign-function (llama-batch-init "llama_batch_init")
@@ -501,6 +500,10 @@
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
+(fli:define-foreign-function (llama-token-eot "llama_token_eot")
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
 (fli:define-foreign-function (llama-token-cls "llama_token_cls")
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
@@ -525,19 +528,27 @@
     ((model (:pointer (:struct llama-model))))
   :result-type :int)
 
-(fli:define-foreign-function (llama-token-prefix "llama_token_prefix")
+(fli:define-foreign-function (llama-token-fim-pre "llama_token_fim_pre")
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
-(fli:define-foreign-function (llama-token-middle "llama_token_middle")
+(fli:define-foreign-function (llama-token-fim-suf "llama_token_fim_suf")
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
-(fli:define-foreign-function (llama-token-suffix "llama_token_suffix")
+(fli:define-foreign-function (llama-token-fim-mid "llama_token_fim_mid")
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
-(fli:define-foreign-function (llama-token-eot "llama_token_eot")
+(fli:define-foreign-function (llama-token-fim-pad "llama_token_fim_pad")
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
+(fli:define-foreign-function (llama-token-fim-rep "llama_token_fim_rep")
+    ((model (:pointer (:struct llama-model))))
+  :result-type llama-token)
+
+(fli:define-foreign-function (llama-token-fim-sep "llama_token_fim_sep")
     ((model (:pointer (:struct llama-model))))
   :result-type llama-token)
 
@@ -685,6 +696,13 @@
      (exponent :float))  
   :result-type (:pointer (:struct llama-sampler)))
 
+(fli:define-foreign-function (llama-sampler-init-xtc "llama_sampler_init_xtc")
+    ((p :float)
+     (temp :float)
+     (min-keep :unsigned-long)
+     (seed :unsigned-int))
+  :result-type (:pointer (:struct llama-sampler)))
+
 (fli:define-foreign-function (llama-sampler-init-mirostat "llama_sampler_init_mirostat")
     ((n-vocab :int)
      (seed :unsigned-int)
@@ -721,6 +739,10 @@
     ((n-vocab :int)
      (n-logit-bias :int)
      (logit-bias (:pointer (:struct llama-logit-bias))))
+  :result-type (:pointer (:struct llama-sampler)))
+
+(fli:define-foreign-function (llama-sampler-init-infill "llama_sampler_init_infill")
+    ((model (:pointer (:struct llama-model))))
   :result-type (:pointer (:struct llama-sampler)))
 
 (fli:define-foreign-function (llama-sampler-get-seed "llama_sampler_get_seed")

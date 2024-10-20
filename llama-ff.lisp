@@ -42,10 +42,7 @@
 	     (pos (* llama-pos))
 	     (n-seq-id (* :int))
 	     (seq-id (* (* llama-seq-id)))
-	     (logits (* :char))
-	     (all-pos-0 llama-pos)
-	     (all-pos-1 llama-pos)
-	     (all-seq-id llama-seq-id)))
+	     (logits (* :char))))
 
 ;; llama_model_kv_override_type
 ;; (ff:def-foreign-type llama-model-kv-override)
@@ -207,6 +204,10 @@
   :returning :boolean)
 
 (ff:def-foreign-call (llama-supports-gpu-offload "llama_supports_gpu_offload")
+    (:void)
+  :returning :boolean)
+
+(ff:def-foreign-call (llama-supports-rpc "llama_supports_rpc")
     (:void)
   :returning :boolean)
 
@@ -395,9 +396,7 @@
 
 (ff:def-foreign-call (llama-batch-get-one "llama_batch_get_one")
     ((tokens (* llama-token))
-     (n-tokens :int)
-     (pos-0 llama-pos)
-     (seq-id llama-seq-id))
+     (n-tokens :int))
   :returning llama-batch
   :pass-structs-by-value t)
 
@@ -515,6 +514,10 @@
     ((model llama-model))
   :returning llama-token)
 
+(ff:def-foreign-call (llama-token-eot "llama_token_eot")
+    ((model llama-model))
+  :returning llama-token)
+
 (ff:def-foreign-call (llama-token-cls "llama_token_cls")
     ((model llama-model))
   :returning llama-token)
@@ -539,19 +542,27 @@
     ((model llama-model))
   :returning :int)
 
-(ff:def-foreign-call (llama-token-prefix "llama_token_prefix")
+(ff:def-foreign-call (llama-token-fim-pre "llama_token_fim_pre")
     ((model llama-model))
   :returning llama-token)
 
-(ff:def-foreign-call (llama-token-middle "llama_token_middle")
+(ff:def-foreign-call (llama-token-fim-suf "llama_token_fim_suf")
     ((model llama-model))
   :returning llama-token)
 
-(ff:def-foreign-call (llama-token-suffix "llama_token_suffix")
+(ff:def-foreign-call (llama-token-fim-mid "llama_token_fim_mid")
     ((model llama-model))
   :returning llama-token)
 
-(ff:def-foreign-call (llama-token-eot "llama_token_eot")
+(ff:def-foreign-call (llama-token-fim-pad "llama_token_fim_pad")
+    ((model llama-model))
+  :returning llama-token)
+
+(ff:def-foreign-call (llama-token-fim-rep "llama_token_fim_rep")
+    ((model llama-model))
+  :returning llama-token)
+
+(ff:def-foreign-call (llama-token-fim-sep "llama_token_fim_sep")
     ((model llama-model))
   :returning llama-token)
 
@@ -699,6 +710,13 @@
      (exponent :float))  
   :returning llama-sampler)
 
+(ff:def-foreign-call (llama-sampler-init-xtc "llama_sampler_init_xtc")
+    ((p :float)
+     (temp :float)
+     (min-keep :unsigned-long)
+     (seed :unsigned-int))
+  :returning llama-sampler)
+
 (ff:def-foreign-call (llama-sampler-init-mirostat "llama_sampler_init_mirostat")
     ((n-vocab :int)
      (seed :unsigned-int)
@@ -735,6 +753,10 @@
     ((n-vocab :int)
      (n-logit-bias :int)
      (logit-bias (* llama-logit-bias)))
+  :returning llama-sampler)
+
+(ff:def-foreign-call (llama-sampler-init-infill "llama_sampler_init_infill")
+    ((model llama-model))
   :returning llama-sampler)
 
 (ff:def-foreign-call (llama-sampler-get-seed "llama_sampler_get_seed")
