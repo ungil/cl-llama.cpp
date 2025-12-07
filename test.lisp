@@ -2,17 +2,20 @@
 
 (in-package :llama.test)
 
-;; https://huggingface.co/QuantFactory/Meta-Llama-3-8B-GGUF-v2/blob/main/Meta-Llama-3-8B.Q4_1.gguf
-(defvar *test-model* (truename "~/llama.cpp/models/Meta-Llama-3-8B.Q4_1.gguf"))
+;; https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/blob/main/gemma-3-4b-it-Q8_0.gguf
+;; (defvar *test-model* (truename "~/llama.cpp/models/gemma-3-4b-it-Q8_0.gguf"))
+;; https://huggingface.co/unsloth/Ministral-3-3B-Instruct-2512-GGUF/tree/main
+;; (defvar *test-model* (truename "~/llama.cpp/models/Ministral-3-3B-Instruct-2512-Q8_0.gguf"))
+;; https://huggingface.co/QuantFactory/SmolLM-135M-GGUF
+(defvar *test-model* (truename "~/llama.cpp/models/SmolLM-135M.Q8_0.gguf"))
 
-;; https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/blob/main/gemma-2-9b-it-Q6_K_L.gguf
-(defvar *test-model-embedding* (truename "~/llama.cpp/models/gemma-2-9b-it-Q6_K_L.gguf"))
+;; https://huggingface.co/Casual-Autopsy/snowflake-arctic-embed-l-v2.0-gguf/blob/main/snowflake-arctic-embed-l-v2.0-q8_0.gguf
+;; (defvar *test-model-embedding* (truename "~/llama.cpp/models/snowflake-arctic-embed-l-v2.0-q8_0.gguf"))
+(defvar *test-model-embedding* *test-model*)
 
 (defvar *mdl*)
 
 (defvar *ctx*)
-
-#+sbcl (sb-int:set-floating-point-modes :traps nil)
 
 (defun run ()
   (5am:run! 'llama-suite))
@@ -39,25 +42,25 @@
 (5am:test load-model
   (5am:finishes (setf *mdl* (make-instance 'mdl :file *test-model*))))
 
-(5am:test create-context
+(5am:test (create-context :depends-on load-model)
   (5am:finishes (setf *ctx* (make-instance 'ctx :model *mdl*))))
 
-(5am:test describe-params
+(5am:test (describe-params :depends-on create-context)
   (5am:finishes (describe (slot-value *ctx* 'params))))
 
 (5am:test (tokens :depends-on create-context)
-  (5am:is (= 384133 (+ (token *ctx* :bos) (token *ctx* :eos) (token *ctx* :nl)
-		       (token *ctx* :cls) (token *ctx* :sep) (token *ctx* :prefix)
-		       (token *ctx* :middle) (token *ctx* :suffix) (token *ctx* :eot)))))
+  (5am:is (= 196 (+ (token *ctx* :bos) (token *ctx* :eos) (token *ctx* :nl)
+		    (token *ctx* :sep) (token *ctx* :prefix)
+		    (token *ctx* :middle) (token *ctx* :suffix) (token *ctx* :eot)))))
 
 (5am:test (n-vocab :depends-on create-context)
-  (5am:is (eql 128256 (n-vocab *mdl*))))
+  (5am:is (eql 49152 (n-vocab *mdl*))))
 
 (5am:test (n-ctx :depends-on create-context)
   (5am:is (eql 512 (n-ctx *ctx*))))
 
 (5am:test (n-ctx-train :depends-on create-context)
-  (5am:is (eql 8192 (n-ctx-train *mdl*))))
+  (5am:is (eql 2048 (n-ctx-train *mdl*))))
 
 (5am:test (n-batch :depends-on create-context)
   (5am:is (eql 512 (n-batch *ctx*))))
@@ -66,16 +69,16 @@
   (5am:is (eql 512 (n-ubatch *ctx*))))
 
 (5am:test (n-seq-max :depends-on create-context)
-  (5am:is (eql 512 (n-seq-max *ctx*))))
+  (5am:is (eql 1 (n-seq-max *ctx*))))
 
 (5am:test (pooling-type :depends-on create-context)
   (5am:is (eql :none (pooling-type *ctx*))))
 
 (5am:test (n-embd :depends-on create-context)
-  (5am:is (eql 4096 (n-embd *mdl*))))
+  (5am:is (eql 576 (n-embd *mdl*))))
 
 (5am:test (n-layer :depends-on create-context)
-  (5am:is (eql 4096 (n-layer *mdl*))))
+  (5am:is (eql 30 (n-layer *mdl*))))
 
 (5am:test (vocab-type :depends-on create-context)
   (5am:is (eql :bpe (vocab-type *mdl*))))
@@ -84,13 +87,13 @@
   (5am:is (eql :norm (rope-type *mdl*))))
 
 (5am:test (size :depends-on create-context)
-  (5am:is (eql 5122416640 (size *mdl*))))
+  (5am:is (eql 143025408 (size *mdl*))))
 
 (5am:test (n-params :depends-on create-context)
-  (5am:is (eql 8030261248 (n-params *mdl*))))
+  (5am:is (eql 134515008 (n-params *mdl*))))
 
 (5am:test (vocab :depends-on create-context)
-  (5am:is (eql 128256 (length (get-vocab *ctx*)))))
+  (5am:is (eql 49152 (length (get-vocab *ctx*)))))
 
 (5am:test (tokenize-error :depends-on create-context)
   (5am:signals simple-error (tokenize *mdl* 5 "The quick brown fox jumps over the lazy dog")))
@@ -99,55 +102,60 @@
   (5am:is (= 9 (llama::n (tokenize *mdl* t "The quick brown fox jumps over the lazy dog")))))
 
 (5am:test (tokenize-id :depends-on create-context)
-  (5am:is (equal '(9906)
+  (5am:is (equal '(19556)
 		 (list-tokens (tokenize *mdl* t "Hello")))))
 
 (5am:test (tokenize-str :depends-on create-context)
-  (5am:is (equalp '("Invest" "igation")
-		  (list-tokens (tokenize *mdl* t "Investigation") :context *ctx*))))
+  (5am:is (equalp '("Extra" "ordinary")
+		  (list-tokens (tokenize *mdl* t "Extraordinary") :context *ctx*))))
 
 (5am:test (embedding :depends-on metal)
-  (5am:is (equalp #+(or ARM ARM64 AARCH64) #(0.0027472726 -0.03923983 -0.002686364)
-		  #-(or LINUX ARM ARM64 AARCH64) #(0.0028596406 -0.03940781 -0.0031085624)
-		  #+LINUX #(0.00355976 -0.039729998 -0.0036821505)
+  (5am:is (equalp #+(or ARM ARM64 AARCH64) #(-0.049819496 0.012173356 0.0044705253)
+		  #-(or LINUX ARM ARM64 AARCH64) #(-0.049819496 0.012173356 0.0044705253)
+		  #+LINUX #(-0.049819496 0.012173356 0.0044705253)
 		  (subseq (embedding "testing" :model *test-model-embedding*) 0 3))))
 
 (5am:test embedding-no-metal
-  (5am:is (equalp #+(or ARM ARM64 AARCH64) #(0.0026047684 -0.04103954 -0.002475477)		 
-		  #-(or LINUX ARM ARM64 AARCH64) #(0.0031177837 -0.04023566 -0.00362199)
-		  #+LINUX #(0.0036606288 -0.04072999 -0.0033451244)
+  (5am:is (equalp #+(or ARM ARM64 AARCH64) #(-0.048586186 0.0029827687 0.0010325225)
+		  #-(or LINUX ARM ARM64 AARCH64) #(-0.048586186 0.0029827687 0.0010325225)
+		  #+LINUX #(-0.048586186 0.0029827687 0.0010325225)
 		  (subseq (embedding "testing" :model *test-model-embedding* :metal nil) 0 3))))
 
 (5am:test (embeddings :depends-on metal)
-  (5am:is (equalp #+(or ARM ARM64 AARCH64) '(#(0.0027472726 -0.03923983 -0.002686364)
-					     #(-0.00230485 -0.03767107 0.0024707825)
-					     #(0.0027472726 -0.03923983 -0.002686364))
-		  #-(or LINUX ARM ARM64 AARCH64) '(#(0.0028596406 -0.03940781 -0.0031085624)
-						   #(-0.002174724 -0.037758734 0.0031787835)
-						   #(0.0028596406 -0.03940781 -0.0031085624))
-		  #+LINUX '(#(0.00355976 -0.039729998 -0.0036821505)
-			    #(-0.0020913247 -0.037312973 0.0023225711)
-			    #(0.00355976 -0.039729998 -0.0036821505))
+	  (5am:is (equalp #+(or ARM ARM64 AARCH64) '(#(-0.049819496 0.012173356 0.0044705253)
+						     #(-0.025256668 0.0029770537 0.013806367)
+						     #(-0.049819496 0.012173356 0.0044705253))
+		  #-(or LINUX ARM ARM64 AARCH64) '(#(-0.049819496 0.012173356 0.0044705253)
+						   #(-0.025256668 0.0029770537 0.013806367)
+						   #(-0.049819496 0.012173356 0.0044705253))
+		  #+LINUX  '(#(-0.049819496 0.012173356 0.0044705253)
+			     #(-0.025256668 0.0029770537 0.013806367)
+			     #(-0.049819496 0.012173356 0.0044705253))
 		  (mapcar (lambda (x) (subseq x 0 3)) (embedding '("testing" "something else" "testing")
 								 :model *test-model-embedding*)))))
 
 (5am:test embeddings-no-metal
-  (5am:is (equalp #+(or ARM ARM64 AARCH64) '(#(0.0026047684 -0.04103954 -0.002475477)
-					     #(-0.0024215174 -0.038562134 0.002473093)
-					     #(0.0026047684 -0.04103954 -0.002475477))
-		  #-(or LINUX ARM ARM64 AARCH64) '(#(0.0031177837 -0.04023566 -0.00362199)
-						   #(-0.002250815 -0.038325872 0.0030096115)
-						   #(0.0031177837 -0.04023566 -0.00362199))
-		  #+LINUX '(#(0.0036606288 -0.04072999 -0.0033451244)
-			    #(-0.0019625456 -0.037582934 0.0021264562)
-			    #(0.0036606288 -0.04072999 -0.0033451244))
+	  (5am:is (equalp #+(or ARM ARM64 AARCH64) '(#(-0.048586186 0.0029827687 0.0010325225)
+						     #(-0.026333824 -2.797078E-4 0.010385639)
+						     #(-0.048586186 0.0029827687 0.0010325225))
+		  #-(or LINUX ARM ARM64 AARCH64) '(#(-0.048586186 0.0029827687 0.0010325225)
+						   #(-0.026333824 -2.797078E-4 0.010385639)
+						   #(-0.048586186 0.0029827687 0.0010325225))
+		  #+LINUX '(#(-0.048586186 0.0029827687 0.0010325225)
+			    #(-0.026333824 -2.797078E-4 0.010385639)
+			    #(-0.048586186 0.0029827687 0.0010325225))
 		  (mapcar (lambda (x) (subseq x 0 3)) (embedding '("testing" "something else" "testing")
 								 :model *test-model-embedding* :metal nil)))))
 
+(5am:test simple
+  (5am:is (equalp #-LINUX "Hello my name is <NAME> and I am a student at the University of California, Santa Barbara. I am currently studying Computer Science and I am interested in learning more about the"
+		  #+LINUX "Hello my name is <NAME> and I am a student at the University of California, Santa Barbara. I am currently studying Computer Science and I am interested in learning more about the"
+		  (simple :model *test-model* :print-while-generating nil :print-timings nil))))
+
 (5am:test (perplexity :depends-on metal)
-  (5am:is (= #+(or ARM ARM64 AARCH64) 1.2597692
-	     #-(or LINUX ARM ARM64 AARCH64) 1.2595763
-	     #+LINUX 1.2502482
+  (5am:is (= #+(or ARM ARM64 AARCH64) 2.116421
+	     #-(or LINUX ARM ARM64 AARCH64) 2.116421
+	     #+LINUX 2.116421
 	     (perplexity (apply #'concatenate 'string
 				(with-open-file (in (asdf:system-relative-pathname (asdf:find-system :llama) "LICENSE")
 						    :external-format :utf-8 :element-type 'character)
@@ -156,20 +164,15 @@
 			 :model *test-model* :verbose 0))))
 
 (5am:test perplexity-no-metal
-  (5am:is (= #+(or ARM ARM64 AARCH64) 1.2597548
-	     #-(or LINUX ARM ARM64 AARCH64) 1.2595822
-	     #+LINUX 1.2502482
+  (5am:is (= #+(or ARM ARM64 AARCH64) 2.1186126
+	     #-(or LINUX ARM ARM64 AARCH64) 2.1186126
+	     #+LINUX 2.1186126
 	     (perplexity (apply #'concatenate 'string
 				(with-open-file (in (asdf:system-relative-pathname (asdf:find-system :llama) "LICENSE")
 						    :external-format :utf-8 :element-type 'character)
 				  (loop for line = (read-line in nil nil)
 					while line append (list line line line line))))
 			 :metal nil :model *test-model* :verbose 0))))
-
-(5am:test simple
-  (5am:is (equalp #-LINUX "Hello my name is {name} and I am {age} years old. I am currently studying {course} at {university}. My hobbies include {"
-		  #+LINUX "Hello my name is {name} and I am {age} years old. I am currently studying at {school} and my favorite subject is {subject}."
-		  (simple :model *model* :print-while-generating nil :print-timings nil))))
 
 #+NIL
 (5am:test llama-greedy

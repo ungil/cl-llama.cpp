@@ -3,11 +3,12 @@
 (in-package :llama)
 
 (defclass model-params ()
-  ((n-gpu-layers :initarg :n-gpu-layers)
+  ((devices :initarg :devices)
+   (tensor-buft-overrides :initarg :tensor-buft-overrides)
+   (n-gpu-layers :initarg :n-gpu-layers)
    (split-mode :initarg :split-mode)
    (main-gpu :initarg :main-gpu)
    (tensor-split :initarg :tensor-split)
-   (rpc-servers :initarg :rpc-servers)
    (progress-callback :initarg :progress-callback)
    (progress-callback-user-data :initarg :progress-callback-user-data)
    (kv-overrides :initarg :kv-overrides)
@@ -15,6 +16,8 @@
    (use-mmap :initarg :use-mmap)
    (use-mlock :initarg :use-mlock)
    (check-tensors :initarg :check-tensors)
+   (use-extra-bufts :initarg :use-extra-bufts)
+   (no-host :initarg :no-host)
    #+(or lispworks allegro) foreign-struct))
 
 (defun model-default-params ()
@@ -32,6 +35,7 @@
    (rope-scaling-type :initarg :rope-scaling-type)
    (pooling-type :initarg :pooling-type)
    (attention-type :initarg :attention-type)
+   (flash-attn-type :initarg :flash-attn-type)   
    (rope-freq-base :initarg :rope-freq-base)
    (rope-freq-scale :initarg :rope-freq-scale)
    (yarn-ext-factor :initarg :yarn-ext-factor)
@@ -44,13 +48,14 @@
    (cb-eval-user-data :initarg :cb-eval-user-data)
    (type-k :initarg :type-k)
    (type-v :initarg :type-v)
-   (logits-all :initarg :logits-all)
-   (embeddings :initarg :embeddings)
-   (offload-kqv :initarg :offload-kqv)
-   (flash-attn :initarg :flash-attn)
-   (no-perf :initarg :no-perf)   
    (abort-callback :initarg :abort-callback)
    (abort-callback-data :initarg :abort-callback-data)
+   (embeddings :initarg :embeddings)
+   (offload-kqv :initarg :offload-kqv)
+   (no-perf :initarg :no-perf)
+   (op-offload :initarg :op-offload)
+   (swa-full :initarg :swa-full)
+   (kv-unified :initarg :kv-unified)
    #+(or lispworks allegro) foreign-struct))
 
 (defun context-default-params ()
@@ -101,11 +106,11 @@
 (defun model-from-file (filename &optional (params (model-default-params)))
   (let ((file (namestring (probe-file (namestring filename)))))
     (assert file)
-    (llama-load-model-from-file file params)))
+    (llama-model-load-from-file file params)))
 
-(defun context-from-model (model &optional (params (context-default-params)))
+(defun context-from-model (model &optional (params (context-default-params)))  
   (assert model)
-  (llama-new-context-with-model model params))
+  (llama-init-from-model model params))
 
 #+lispworks
 (defmethod initialize-instance :after ((obj model-params) &key)
@@ -168,19 +173,28 @@
 		      #-allegro (setf (slot-value params (intern (symbol-name key) "LLAMA")) value))
 		params))
 
+(defclass voc ()
+  ((model :initarg :model :accessor model)
+   (foreign-pointer :initarg :ptr :accessor ptr)))
+
 (defclass mdl ()
   ((file :initarg :file :accessor file)
    (params :initarg :params :accessor params
 	   :initform #+lispworks (make-instance 'model-params)
 		     #-lispworks (model-default-params))
+   (vocab :accessor vocab)
    (foreign-pointer :accessor ptr)))
 
 (defmethod initialize-instance :after ((mdl mdl) &key)
   (let ((ptr (model-from-file (file mdl)
 			      #+lispworks (slot-value (params mdl) 'foreign-struct)
 			      #-lispworks (params mdl))))
+    (assert (not #+lispworks (fli:null-pointer-p ptr)
+		 #+allegro (zerop ptr)
+		 #-(or lispworks allegro) (cffi:null-pointer-p ptr)))
     (setf (slot-value mdl 'foreign-pointer) ptr)
-    (tg:finalize mdl (lambda () (llama-free-model ptr))))
+    (tg:finalize mdl (lambda () (llama-model-free ptr)))
+    (setf (vocab mdl) (make-instance 'voc :ptr (llama-model-get-vocab ptr) :model mdl)))
   mdl)
 
 (defun model-parameters (&rest args)
@@ -192,31 +206,37 @@
 		      #-allegro (setf (slot-value params (intern (symbol-name key) "LLAMA")) value))
 		params))
 
-(defmethod vocab-type ((mdl mdl))
-  (ecase (llama-vocab-type (ptr mdl))
+(defmethod vocab-type ((voc voc))
+  (ecase (llama-vocab-type (ptr voc))
     (0 :none)
     (1 :spm)   ;; LLaMA tokenizer based on byte-level BPE with byte fallback
     (2 :bpe)   ;; GPT-2 tokenizer based on byte-level BPE
     (3 :wpm))) ;; BERT tokenizer based on WordPiece
 
+(defmethod vocab-type ((mdl mdl))
+  (vocab-type (vocab mdl)))
+  
 (defmethod rope-type ((mdl mdl))
-  (ecase (llama-rope-type (ptr mdl))
+  (ecase (llama-model-rope-type (ptr mdl))
     (-1 :none)
     (0 :norm)
     (2 :neox)
     (4 :glm)))
 
+(defmethod n-vocab ((voc voc))
+  (llama-vocab-n-tokens (ptr voc)))
+
 (defmethod n-vocab ((mdl mdl))
-  (llama-n-vocab (ptr mdl)))
+  (n-vocab (vocab mdl)))
 
 (defmethod n-ctx-train ((mdl mdl))
-  (llama-n-ctx-train (ptr mdl)))
+  (llama-model-n-ctx-train (ptr mdl)))
 
 (defmethod n-embd ((mdl mdl))
-  (llama-n-embd (ptr mdl)))
+  (llama-model-n-embd (ptr mdl)))
 
 (defmethod n-layer ((mdl mdl))
-  (llama-n-embd (ptr mdl)))
+  (llama-model-n-layer (ptr mdl)))
 
 (defmethod size ((mdl mdl))
   (llama-model-size (ptr mdl)))
@@ -263,14 +283,14 @@
     (tg:finalize ctx (lambda () (llama-free ptr))))
   ctx)
 
+(defmethod n-vocab ((ctx ctx))
+  (n-vocab (model ctx)))
+
 (defmethod vocab-type ((ctx ctx))
   (vocab-type (model ctx)))
 
 (defmethod rope-type ((ctx ctx))
   (rope-type (model ctx)))
-
-(defmethod n-vocab ((ctx ctx))
-  (n-vocab (model ctx)))
 
 (defmethod n-ctx-train ((ctx ctx))
   (n-ctx-train (model ctx)))
@@ -394,16 +414,19 @@
 	   (add (max 0 (- (n obj) limit))))
       (format stream "~A and ~D tokens more" ids add))))
 
-(defmethod tokenize ((mdl mdl) (tok (eql t)) text &key add-special parse-special)
+(defmethod tokenize ((mdl mdl) tok text &key add-special parse-special)
+  (tokenize (vocab mdl) tok text :add-special add-special :parse-special parse-special))
+	    
+(defmethod tokenize ((voc voc) (tok (eql t)) text &key add-special parse-special)
   ;; TODO: automatically grow the output vector as needed
-  (tokenize mdl (length text) text :add-special add-special :parse-special parse-special))
+  (tokenize voc (length text) text :add-special add-special :parse-special parse-special))
 
-(defmethod tokenize ((mdl mdl) (tok fixnum) text &key add-special parse-special)
-  (tokenize mdl (make-instance 'tokens :size tok)
+(defmethod tokenize ((voc voc) (tok fixnum) text &key add-special parse-special)
+  (tokenize voc (make-instance 'tokens :size tok)
 	    text :add-special add-special :parse-special parse-special))
 
-(defmethod tokenize ((mdl mdl) (tok tokens) text &key add-special parse-special)
-  (let ((res (llama-tokenize (ptr mdl) text
+(defmethod tokenize ((voc voc) (tok tokens) text &key add-special parse-special)
+  (let ((res (llama-tokenize (ptr voc) text
 			     #+lispworks (fli:with-foreign-string
 					     (ptr elements bytes :external-format :utf-8 :null-terminated-p nil)
 					   text bytes)
@@ -482,9 +505,15 @@
   (get-token (model ctx) id))
 
 (defmethod get-token ((mdl mdl) id)
+  (get-token (vocab mdl) id))
+
+(defmethod get-token ((voc voc) id)
   (substitute #\Space #\Ġ	      
-	      #+lispworks (fli:convert-from-foreign-string (llama-token-get-text (ptr mdl) id) :external-format :utf-8)
-	      #-lispworks (llama-token-get-text (ptr mdl) id)))
+	      #+lispworks (fli:convert-from-foreign-string (llama-vocab-get-text (ptr voc) id) :external-format :utf-8)
+	      #-lispworks (llama-vocab-get-text (ptr voc) id)))
+
+(defmethod get-vocab ((ctx ctx))
+  (loop with model = (model ctx) for id below (n-vocab model) collect (get-token model id)))
 
 (defmethod get-vocab ((ctx ctx))
   (loop with model = (model ctx) for id below (n-vocab model) collect (get-token model id)))
@@ -493,20 +522,31 @@
   (assert (member token '(:bos :eos :nl :cls :sep :prefix :middle :suffix :eot)))
   (token (model ctx) token))
 
-(defmethod token ((mdl mdl) token)
+(defmethod token ((voc voc) token)
   (ecase token
-    (:bos (llama-token-bos (ptr mdl)))
-    (:eos (llama-token-eos (ptr mdl)))
-    (:nl (llama-token-nl (ptr mdl)))
-    (:cls (llama-token-cls (ptr mdl)))
-    (:sep (llama-token-sep (ptr mdl)))
-    (:prefix (llama-token-fim-pre (ptr mdl)))
-    (:middle (llama-token-fim-mid (ptr mdl)))
-    (:suffix (llama-token-fim-suf (ptr mdl)))
-    (:eot (llama-token-eot (ptr mdl)))))
+    (:bos (llama-vocab-bos (ptr voc)))
+    (:eos (llama-vocab-eos (ptr voc)))
+    (:nl (llama-vocab-nl (ptr voc)))
+    (:sep (llama-vocab-sep (ptr voc)))
+    (:prefix (llama-vocab-fim-pre (ptr voc)))
+    (:middle (llama-vocab-fim-mid (ptr voc)))
+    (:suffix (llama-vocab-fim-suf (ptr voc)))
+    (:eot (llama-vocab-eot (ptr voc)))))
+
+(defmethod token ((mdl mdl) token)
+  (token (vocab mdl) token))
+
+(defmethod token-is-eog ((voc voc) id)
+  (llama-vocab-is-eog (ptr voc) id))
 
 (defmethod token-is-eog ((mdl mdl) id)
-  (llama-token-is-eog (ptr mdl) id))
+  (token-is-eog (vocab mdl) id))
+
+(defmethod token-is-control ((voc voc) id)
+  (llama-vocab-is-control (ptr voc) id))
+
+(defmethod token-is-control ((mdl mdl) id)
+  (token-is-control (vocab mdl) id))
 
 (defmethod print-timings ((ctx ctx))
   (llama-perf-context-print (ptr ctx)))
@@ -576,7 +616,7 @@
 	0))
 
 (defmethod decode ((ctx ctx) (batch batch) &key (clear nil))
-  (when clear (llama-kv-cache-clear (ptr ctx)))
+  (when clear (memory-clear ctx))
   (let ((res (llama-decode (ptr ctx) #+(or lispworks allegro) (ptr batch) #-(or lispworks allegro) (obj batch))))
     (case res
       (0 t)
@@ -584,11 +624,23 @@
 (try reducing the size of the batch or increase the context)"))
       (otherwise (error "code error: ~A" res)))))
 
+(defmethod add-bos-token ((voc voc))
+  (llama-vocab-get-add-bos (ptr voc)))
+
 (defmethod add-bos-token ((mdl mdl))
-  (llama-add-bos-token (ptr mdl)))
+  (add-bos-token (vocab mdl)))
+
+(defmethod add-bos-token ((ctx ctx))
+  (add-bos-token (model ctx)))
+
+(defmethod add-eos-token ((voc voc))
+  (llama-vocab-get-add-eos (ptr voc)))
 
 (defmethod add-eos-token ((mdl mdl))
-  (llama-add-bos-token (ptr mdl)))
+  (add-eos-token (vocab mdl)))
+
+(defmethod add-eos-token ((ctx ctx))
+  (add-eos-token (model ctx)))
 
 (defmethod should-add-bos-token ((mdl mdl))
   (let ((add-bos (add-bos-token mdl)))
@@ -596,14 +648,8 @@
 	(equal (vocab-type mdl) :spm)
 	(plusp add-bos))))
 
-(defmethod add-bos-token ((ctx ctx))
-  (add-bos-token (model ctx)))
-
-(defmethod add-eos-token ((ctx ctx))
-  (add-bos-token (model ctx)))
-
 (defmethod should-add-bos-token ((ctx ctx))
   (should-add-bos-token (model ctx)))
 
-(defmethod kv-cache-clear ((ctx ctx))
-  (llama-kv-cache-clear (ptr ctx)))
+(defmethod memory-clear ((ctx ctx) &optional (data t))
+  (llama-memory-clear (llama-get-memory (ptr ctx)) data))

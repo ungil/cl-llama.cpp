@@ -35,7 +35,7 @@
 	  for start = (* i n-ctx)
 	  for end = (+ start n-ctx)
 	  for n-seq-batch = (min n-seq (- n-chunk i))
-	  do (kv-cache-clear ctx)
+	  do (memory-clear ctx)
 	     (loop for n-outputs = 0
 		   for j from 0 below num-batches
 		   for batch-start = (+ start (* j n-batch))
@@ -43,22 +43,16 @@
 		   do (clear batch)
 		   do (loop for seq from 0 below n-seq-batch
 			    for seq-start = (+ batch-start (* seq n-ctx))
-			    ;; save original token and restore it after eval
-			    for token-org = (first (list-tokens (subset tokens seq-start 1)))
-			    ;; add BOS token for the first batch of each chunk
-			    do (when (and add-bos (zerop j))
-				 ;;tokens[seq_start] = llama_token_bos(llama_get_model(ctx))
-				 (error "TODO add BOS token for the first batch of each chunk"))
-			       (loop for k from 0 below batch-size
+			    do (loop for k from 0 below batch-size
 				     for idx = (+ (* seq n-ctx) k)
-				     for token = (first (list-tokens (subset tokens (+ seq-start k) 1)))
+				     for token = (if (and (zerop k) add-bos (zerop j))
+ 						     ;; add BOS token for the first batch of each chunk
+						     (token ctx :bos)
+						     (first (list-tokens (subset tokens (+ seq-start k) 1))))
 				     for pos = (+ (* j n-batch) k)
 				     for logits = (>= pos first)
 				     do (when logits (incf n-outputs))
-					(add batch token pos logits seq)))
-		      (when (and add-bos (zerop j))
-			;; tokens[seq_start] = token_org
-			(error "TODO ? restore the original token in case it was set to BOS")))
+					(add batch token pos logits seq))))
 	     (assert (decode ctx batch))
 	     (if (zerop i) (llama-synchronize (ptr ctx)))
 	     ;; if (num_batches > 1 && n_outputs > 0) {
@@ -106,9 +100,9 @@ If <text> is a pathname the contents of the file are used."
 	 (n-kv (* n-seq n-ctx))
 	 (n-batch (min n-batch n-kv))
 	 (mdl (make-instance 'mdl :file model
-				  :params (model-parameters :n-gpu-layers (if metal 1 0))))
+				  :params (model-parameters :n-gpu-layers (if metal 999 0))))
 	 (ctx (make-instance 'ctx :model mdl
-				  :params (context-parameters :logits-all t :n-ctx n-kv)))
+				  :params (context-parameters :n-ctx n-kv :kv-unified t)))
 	 (tokens (tokenize (model ctx) t text :add-special add-special)))
     (assert (<= n-kv (n-ctx-train mdl)))
     (prog1
@@ -116,15 +110,15 @@ If <text> is a pathname the contents of the file are used."
       (when (> verbose 1) (print-timings ctx))
       (llama-backend-free))))
 
-;; ./llama-perplexity  -f ~/wikitext-2-raw/wiki.test.raw -ngl 0 -m models/Meta-Llama-3-8B.Q4_1.ggufw
-;; [1]7.5188,[2]11.9238,[3]13.2306,[4]14.6048,
+;; ./llama-perplexity -f ~/wikitext-2-raw/wiki.test.raw -m ~/llama.cpp/models/SmolLM-135M.Q8_0.gguf
+;; [1]11.2329,[2]18.2887,[3]17.7327,[4]17.6559,[5]17.7286,[6]17.9963,[7]18.4397,[8]19.1192,
 
-;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :metal nil :model "~/llama.cpp/models/Meta-Llama-3-8B.Q4_1.gguf")
-;; [1]7.5188 [2]11.9238 [3]13.2306 [4]14.6048
+;; ./llama-perplexity -f ~/wikitext-2-raw/wiki.test.raw -ngl 0 -m ~/llama.cpp/models/SmolLM-135M.Q8_0.gguf
+;; [1]11.2266,[2]18.2823,[3]17.7238,[4]17.6471,[5]17.7210,[6]17.9894,[7]18.4318,[8]19.1116,
 
-;; ./llama-perplexity  -f ~/wikitext-2-raw/wiki.test.raw -ngl 1 -m models/Meta-Llama-3-8B.Q4_1.gguf
-;; [1]7.5192,[2]11.9239,[3]13.2304,[4]14.6041,
+;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :metal t :model "~/llama.cpp/models/SmolLM-135M.Q8_0.gguf")
+;; [1]11.2329 [2]18.2887 [3]17.7327 [4]17.6559 [5]17.7286 [6]17.9963 [7]18.4397 [8]19.1192
 
-;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :metal t :model "~/llama.cpp/models/Meta-Llama-3-8B.Q4_1.gguf")
-;; 
-;; [1]6.7980 [2]11.2963 [3]12.7057 [4]14.2474 
+;; (perplexity #P"~/wikitext-2-raw/wiki.test.raw" :metal nil :model "~/llama.cpp/models/SmolLM-135M.Q8_0.gguf")
+;; [1]11.2266 [2]18.2823 [3]17.7238 [4]17.6471 [5]17.7210 [6]17.9894 [7]18.4318 [8]19.1116 
+

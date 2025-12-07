@@ -3,7 +3,7 @@
 (defsystem #:llama
     :name "llama"
     :author "Carlos Ungil <ungil@mac.com>"
-    :license "Apache License, Version 2.0"
+    :license "MIT"
     :description "Common Lisp interface to https://github.com/ggerganov/llama.cpp/"
     :in-order-to ((test-op (test-op "llama/test")))
     :depends-on (:trivial-garbage #-(or lispworks allegro) :cffi #-(or lispworks allegro) :cffi-libffi)
@@ -21,7 +21,7 @@
 (defsystem #:llama/test
     :name "llama test suite"
     :author "Carlos Ungil <ungil@mac.com>"
-    :license "Apache License, Version 2.0"
+    :license "MIT"
     :depends-on (:llama :fiveam)
     :components ((:file "test"))
     :perform (asdf:test-op (o s) (declare (ignore o s)) (uiop:symbol-call :llama.test '#:run)))

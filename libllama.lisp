@@ -1,54 +1,37 @@
 (in-package :llama)
 
-(defvar *libggml* (asdf:system-relative-pathname "llama" "llama.cpp/libggml.so"))
+(defvar *libraries*
+  (append (directory (merge-pathnames (asdf:system-relative-pathname "llama" "llama.cpp/")
+				      "*.dylib"))
+	  (directory (merge-pathnames (asdf:system-relative-pathname "llama" "llama.cpp/")
+				      "*.dll"))
+	  (directory (merge-pathnames (asdf:system-relative-pathname "llama" "llama.cpp/")
+				      "*.so"))))
 
-(defvar *libllama* (asdf:system-relative-pathname "llama" "llama.cpp/libllama.so"))
-
-(unless (and (probe-file *libggml*) (probe-file *libllama*))
-  (error "to build the library execute 'make clean libllama.so' in the llama.cpp subdirectory"))
-
-#-(or lispworks allegro)
-(progn
-  (cffi:load-foreign-library *libggml*)
-  (cffi:load-foreign-library *libllama*)
-  (format t "~%~%   Foreign libraries ~A and ~A loaded~%~%~%" *libggml* *libllama*))
-
-;; #-(or lispworks allegro) (load (asdf:system-relative-pathname "llama" "llama-cffi.lisp"))
-
-#+lispworks
-(progn
-  (fli:register-module "libggml.so" :file-name *libggml*)  
-  (fli:register-module "libllama.so" :file-name *libllama*)
-  (format cl:t "~%~%   Foreign libraries ~A and ~A loaded~%~%~%" *libggml* *libllama*))
+(cl:terpri)
+(loop for library in *libraries* do
+      #-(or lispworks allegro)
+	(cffi:load-foreign-library library)
+      #+lispworks
+       (fli:register-module (pathname-name library) :file-name library)
+      #+allegro
+       (load library :foreign t)
+       (format cl:t "~&   Foreign library ~A loaded~&" library))
+(cl:terpri)
 
 #+lispworks (assert (not (eq lw:*default-character-element-type* 'base-char)))
 
+#+sbcl (sb-int:set-floating-point-modes :traps nil)
+
 #|
-(require "foreign-parser")
-
-(defun pretty-name (name) (string-upcase (substitute #\- #\_ name)))
-
-(foreign-parser:process-foreign-file (asdf:system-relative-pathname "llama" "llama.cpp/llama.h")
-:dff (asdf:system-relative-pathname "llama" "llama-dff-original.lisp")
-:package "LLAMA" :case-sensitive '(:user-routine pretty-name))
-
-;; make a copy of llama-dff-original.lisp as llama-dff.lisp
-;; keep only the definitions of size-t (derived from stddef.h)
-;; and uint8-t (derived from _uint8_t.h) and the whole
-;; last section derived from llama.h changing occurrences of
-;;   (:pointer (:const :char))
-;; in function arguments only (without modifying result types) to
-;;   (:reference-pass :ef-mb-string)
-;; except for argument text in llama-tokenize that should have the form
-;;   (:reference-pass (:ef-mb-string :external-format :utf-8))
+cd /tmp
+git clone -b "b7314" https://github.com/ggerganov/llama.cpp.git
+cd llama.cpp
+mkdir buildlib
+cd buildlib
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_BUILD_COMMON=OFF ..
+make
+cp */*dylib */*/*dylib */*/*/*dylib ~/lisp/llama/llama.cpp/
+cp */*so */*/*so */*/*/*so ~/lisp/llama/llama.cpp/
+cp */*dll */*/*dll */*/*/*dll ~/lisp/llama/llama.cpp/
 |#
-
-;; #+lispworks (load (asdf:system-relative-pathname "llama" "llama-dff.lisp"))
-
-#+allegro
-(progn
-  (load *libggml* :foreign t) ;;"libggml.so" :file-name library)
-  (load *libllama* :foreign t) ;;"libllama.so" :file-name library)  
-  (format cl:t "~%~%   Foreign libraries ~A and ~A loaded~%~%~%" *libggml* *libllama*))
-
-;; #+allegro (load (asdf:system-relative-pathname "llama" "llama-ff.lisp"))

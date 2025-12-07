@@ -4,10 +4,8 @@
 
 (defparameter *numa* 0) ;; 0 disabled - 1 distribute - 2 isolate - 3 numactl - 4 mirror
 
-;; https://huggingface.co/QuantFactory/Meta-Llama-3-8B-GGUF-v2/blob/main/Meta-Llama-3-8B.Q4_1.gguf
-(defparameter *model* (truename "~/llama.cpp/models/Meta-Llama-3-8B.Q4_1.gguf"))
-
-(defparameter *max-ctx* 2048)
+;; https://huggingface.co/QuantFactory/SmolLM-135M-GGUF
+(defvar *model* (truename "~/llama.cpp/models/SmolLM-135M.Q8_0.gguf"))
 
 (defparameter *threads* 4)
 

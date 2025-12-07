@@ -1,10 +1,14 @@
 (in-package :llama)
 
+(cffi:defcstruct llama-vocab)
+
 (cffi:defcstruct llama-model)
 
 (cffi:defcstruct llama-context)
 
 (cffi:defcstruct llama-sampler)
+
+(cffi:defcstruct llama-memory)
 
 (cffi:defctype llama-pos :int)
 
@@ -21,6 +25,8 @@
 ;; llama_rope_scaling_type
 ;; llama_pooling_type
 ;; llama_attention_type
+;; llama_flash_attn_type
+;; llama_flash_attn_type_name
 ;; llama_split_mode
 
 (cffi:defcstruct llama-token-data
@@ -31,6 +37,7 @@
 (cffi:defcstruct llama-token-data-array
   (data (:pointer (:struct llama-token-data)))
   (size :unsigned-long)
+  (selected :int64)
   (sorted :bool))
 
 (cffi:defctype llama-progress-callback :pointer)
@@ -47,49 +54,56 @@
 ;; llama_model_kv_override_type
 ;; (cffi:defcstruct llama-model-kv-override)
 
+;; llama_model_tensor_buft_override
+
 (cffi:defcstruct (llama-model-params :class c-model-params)
+  (devices :pointer)
+  (tensor-buft-overrides :pointer)
   (n-gpu-layers :int)
   (split-mode :int)
   (main-gpu :int)
   (tensor-split (:pointer :float))
-  (rpc-servers (:pointer :char))
   (progress-callback :pointer)
   (progress-callback-user-data :pointer)
   (kv-overrides :pointer)
   (vocab-only :bool)
   (use-mmap :bool)
   (use-mlock :bool)
-  (check-tensors :bool))
+  (check-tensors :bool)
+  (use-extra-bufts :bool)
+  (no-host :bool))
 
 (cffi:defcstruct (llama-context-params :class c-context-params)
-  (n-ctx :int)
-  (n-batch :int)
-  (n-ubatch :int)  
-  (n-seq-max :int)  
+  (n-ctx :unsigned-int)
+  (n-batch :unsigned-int)
+  (n-ubatch :unsigned-int)
+  (n-seq-max :unsigned-int)
   (n-threads :int)
   (n-threads-batch :int)
   (rope-scaling-type :int)
   (pooling-type :int)
-  (attention-type :int)  
+  (attention-type :int)
+  (flash-attn-type :int)
   (rope-freq-base :float)
   (rope-freq-scale :float)
   (yarn-ext-factor :float)
   (yarn-attn-factor :float)
   (yarn-beta-fast :float)
   (yarn-beta-slow :float)
-  (yarn-orig-ctx :int)
+  (yarn-orig-ctx :unsigned-int)
   (defrag-thold :float)
   (cb-eval :pointer)
   (cb-eval-user-data :pointer)
   (type-k :int)
   (type-v :int)
-  (logits-all :bool)
+  (abort-callback :pointer)
+  (abort-callback-data :pointer)
   (embeddings :bool)
   (offload-kqv :bool)
-  (flash-attn :bool)
-  (no-perf :bool)  
-  (abort-callback :pointer)
-  (abort-callback-data :pointer))
+  (no-perf :bool)
+  (op-offload :bool)
+  (swa-full :bool)
+  (kv-unified :bool))
 
 (cffi:defcstruct (llama-model-quantize-params :class c-model-quantize-params)
   (nthread :int)
@@ -98,11 +112,13 @@
   (token-embedding-type :int)
   (allow-requantize :bool)
   (quantize-output-tensor :bool)
-  (only-copy :bool)    
+  (only-copy :bool)
   (pure :bool)
   (keep-split :bool)
   (imatrix :pointer)
-  (kv-overrides :pointer))
+  (kv-overrides :pointer)
+  (tensor-types :pointer)
+  (prune-layers :pointer))
 
 (cffi:defcstruct (llama-logit-bias)
   (token llama-token)
@@ -116,61 +132,67 @@
   (content :string))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-model-params))
-  (cffi:with-foreign-slots ((n-gpu-layers split-mode main-gpu tensor-split rpc-servers
+  (cffi:with-foreign-slots ((devices tensor-buft-overrides
+			     n-gpu-layers split-mode main-gpu tensor-split
 			     progress-callback progress-callback-user-data
 			     kv-overrides vocab-only use-mmap use-mlock check-tensors)
 			    ptr (:struct llama-model-params))
-    (make-instance 'model-params :n-gpu-layers n-gpu-layers :split-mode split-mode :main-gpu main-gpu
-				 :tensor-split tensor-split :rpc-servers rpc-servers
-				 :progress-callback progress-callback :progress-callback-user-data progress-callback-user-data
+    (make-instance 'model-params :devices devices :tensor-buft-overrides tensor-buft-overrides
+				 :n-gpu-layers n-gpu-layers :split-mode split-mode :main-gpu main-gpu
+				 :tensor-split tensor-split :progress-callback progress-callback
+				 :progress-callback-user-data progress-callback-user-data
 				 :kv-overrides kv-overrides :vocab-only vocab-only
 				 :use-mmap use-mmap :use-mlock use-mlock :check-tensors check-tensors)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-model-params) ptr)
-  (cffi:with-foreign-slots ((n-gpu-layers split-mode main-gpu tensor-split rpc-servers
+  (cffi:with-foreign-slots ((devices tensor-buft-overrides
+			     n-gpu-layers split-mode main-gpu tensor-split
 			     progress-callback progress-callback-user-data
 			     kv-overrides vocab-only use-mmap use-mlock check-tensors)
 			    ptr (:struct llama-model-params))
-    (setf n-gpu-layers (slot-value value 'n-gpu-layers)
+    (setf devices (slot-value value 'devices)
+	  tensor-buft-overrides (slot-value value 'tensor-buft-overrides)
+	  n-gpu-layers (slot-value value 'n-gpu-layers)
 	  split-mode (slot-value value 'split-mode)
 	  main-gpu (slot-value value 'main-gpu)
 	  tensor-split (slot-value value 'tensor-split)
-	  rpc-servers (slot-value value 'rpc-servers)	  
 	  progress-callback (slot-value value 'progress-callback)
 	  progress-callback-user-data (slot-value value 'progress-callback-user-data)
 	  kv-overrides (slot-value value 'kv-overrides)
 	  vocab-only (slot-value value 'vocab-only)
 	  use-mmap (slot-value value 'use-mmap)
 	  use-mlock (slot-value value 'use-mlock)
-	  check-tensors (slot-value value 'check-tensors))))	  
+	  check-tensors (slot-value value 'check-tensors))))
 
 (defmethod cffi:free-translated-object (ptr (type c-model-params) param)
   (cffi:foreign-free ptr))
 
 (defmethod cffi:translate-from-foreign (ptr (type c-context-params))
   (cffi:with-foreign-slots ((n-ctx n-batch n-ubatch n-seq-max n-threads n-threads-batch
-			     rope-scaling-type pooling-type attention-type rope-freq-base rope-freq-scale
+			     rope-scaling-type pooling-type attention-type flash-attn-type rope-freq-base rope-freq-scale
 			     yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
 			     defrag-thold cb-eval cb-eval-user-data
-			     type-k type-v logits-all embeddings offload-kqv flash-attn no-perf)
+			     type-k type-v embeddings offload-kqv no-perf op-offload swa-full kv-unified)
 			    ptr (:struct llama-context-params))
     (make-instance 'context-params :n-ctx n-ctx :n-batch n-batch :n-ubatch n-ubatch :n-seq-max n-seq-max
 				   :n-threads n-threads :n-threads-batch n-threads-batch
-				   :rope-scaling-type rope-scaling-type :pooling-type pooling-type :attention-type attention-type
+				   :rope-scaling-type rope-scaling-type :pooling-type pooling-type
+				   :attention-type attention-type :flash-attn-type flash-attn-type
 				   :rope-freq-base rope-freq-base :rope-freq-scale rope-freq-scale
 				   :yarn-ext-factor yarn-ext-factor :yarn-attn-factor yarn-attn-factor
 				   :yarn-beta-fast yarn-beta-fast :yarn-beta-slow yarn-beta-slow :yarn-orig-ctx yarn-orig-ctx
 				   :defrag-thold defrag-thold :cb-eval cb-eval :cb-eval-user-data cb-eval-user-data
 				   :type-k type-k :type-v type-v
-				   :logits-all logits-all :embeddings embeddings
-				   :offload-kqv offload-kqv :flash-attn flash-attn :no-perf no-perf)))
+				   :embeddings embeddings
+				   :offload-kqv offload-kqv :no-perf no-perf
+				   :op-offload op-offload :swa-full swa-full :kv-unified kv-unified)))
 
 (defmethod cffi:translate-into-foreign-memory (value (type c-context-params) ptr)
   (cffi:with-foreign-slots ((n-ctx n-batch n-ubatch n-seq-max n-threads n-threads-batch
-			     rope-scaling-type pooling-type attention-type rope-freq-base rope-freq-scale
+			     rope-scaling-type pooling-type attention-type flash-attn-type rope-freq-base rope-freq-scale
 			     yarn-ext-factor yarn-attn-factor yarn-beta-fast yarn-beta-slow yarn-orig-ctx
 			     defrag-thold cb-eval cb-eval-user-data
-			     type-k type-v logits-all embeddings offload-kqv flash-attn no-perf)
+			     type-k type-v embeddings offload-kqv no-perf op-offload swa-full kv-unified)
 			    ptr (:struct llama-context-params))
     (setf n-ctx (slot-value value 'n-ctx)
 	  n-batch (slot-value value 'n-batch)
@@ -180,7 +202,8 @@
 	  n-threads-batch (slot-value value 'n-threads-batch)
 	  rope-scaling-type (slot-value value 'rope-scaling-type)
 	  pooling-type (slot-value value 'pooling-type)
-	  attention-type (slot-value value 'attention-type)	  
+	  attention-type (slot-value value 'attention-type)
+	  flash-attn-type (slot-value value 'flash-attn-type)
 	  rope-freq-base (slot-value value 'rope-freq-base)
 	  rope-freq-scale (slot-value value 'rope-freq-scale)
 	  yarn-ext-factor (slot-value value 'yarn-ext-factor)
@@ -193,11 +216,12 @@
 	  cb-eval-user-data (slot-value value 'cb-eval-user-data)
 	  type-k (slot-value value 'type-k)
 	  type-v (slot-value value 'type-v)
-	  logits-all (slot-value value 'logits-all)
 	  embeddings (slot-value value 'embeddings)
-	  offload-kqv (slot-value value 'offload-kqv)	  
-	  flash-attn (slot-value value 'flash-attn)
-	  no-perf (slot-value value 'no-perf))))
+	  offload-kqv (slot-value value 'offload-kqv)
+	  no-perf (slot-value value 'no-perf)
+	  op-offload (slot-value value 'op-offload)
+	  swa-full (slot-value value 'swa-full)
+	  kv-unified (slot-value value 'kv-unified))))
 
 (defmethod cffi:free-translated-object (ptr (type c-context-params) param)
   (cffi:foreign-free ptr))
@@ -243,13 +267,13 @@
 	  embd (elt value 2)
 	  pos (elt value 3)
 	  n-seq-id (elt value 4)
-	  seq-id (elt value 5)	  
+	  seq-id (elt value 5)
 	  logits (elt value 6))))
 
 (defmethod cffi:free-translated-object (ptr (type c-batch) param)
   (cffi:foreign-free ptr))
 
-(cffi:defcstruct llama-lora-adapter)
+(cffi:defcstruct llama-adapter-lora)
 
 (cffi:defcfun llama-model-default-params (:struct llama-model-params))
 
@@ -260,6 +284,8 @@
 (cffi:defcfun llama-model-quantize-default-params (:struct llama-model-quantize-params))
 
 (cffi:defcfun llama-backend-init :void)
+
+(cffi:defcfun llama-backend-free :void)
 
 (cffi:defcfun llama-numa-init :void
   (numa :int))
@@ -272,16 +298,21 @@
 (cffi:defcfun llama-detach-threadpool :void
   (ctx (:pointer (:struct llama-context))))
 
-(cffi:defcfun llama-backend-free :void)
-
-(cffi:defcfun llama-load-model-from-file (:pointer (:struct llama-model))
+(cffi:defcfun llama-model-load-from-file (:pointer (:struct llama-model))
   (path-model :string)
   (params (:struct llama-model-params)))
 
-(cffi:defcfun llama-free-model :void
+(cffi:defcfun llama-model-load-from-splits (:pointer (:struct llama-model))
+  (paths (:pointer :string))
+  (n-paths :unsigned-long)
+  (params (:struct llama-model-params)))
+
+;; llama_model_save_to_file
+
+(cffi:defcfun llama-model-free :void
   (model (:pointer (:struct llama-model))))
 
-(cffi:defcfun llama-new-context-with-model (:pointer (:struct llama-context))
+(cffi:defcfun llama-init-from-model (:pointer (:struct llama-context))
   (model (:pointer (:struct llama-model)))
   (params (:struct llama-context-params)))
 
@@ -291,6 +322,8 @@
 (cffi:defcfun llama-time-us :int64)
 
 (cffi:defcfun llama-max-devices :int)
+
+(cffi:defcfun llama-max-parallel-sequences :int)
 
 (cffi:defcfun llama-supports-mmap :boolean)
 
@@ -303,6 +336,9 @@
 (cffi:defcfun llama-n-ctx :int
   (ctx (:pointer (:struct llama-context))))
 
+(cffi:defcfun llama-n-ctx-seq :int
+  (ctx (:pointer (:struct llama-context))))
+
 (cffi:defcfun llama-n-batch :int
   (ctx (:pointer (:struct llama-context))))
 
@@ -312,38 +348,61 @@
 (cffi:defcfun llama-n-seq-max :int
   (ctx (:pointer (:struct llama-context))))
 
-(cffi:defcfun llama-n-vocab :int
-  (model (:pointer (:struct llama-model))))
-
-(cffi:defcfun llama-n-ctx-train :int
-  (model (:pointer (:struct llama-model))))
-
-(cffi:defcfun llama-n-embd :int
-  (model (:pointer (:struct llama-model))))
-
-(cffi:defcfun llama-n-layer :int
-  (model (:pointer (:struct llama-model))))
-
-(cffi:defcfun llama-n-head :int
-  (model (:pointer (:struct llama-model))))
-  
 (cffi:defcfun llama-get-model (:pointer (:struct llama-model))
+  (ctx (:pointer (:struct llama-context))))
+
+(cffi:defcfun llama-get-memory (:pointer (:struct llama-memory))
   (ctx (:pointer (:struct llama-context))))
 
 (cffi:defcfun llama-pooling-type :int
   (ctx (:pointer (:struct llama-context))))
 
+(cffi:defcfun llama-model-get-vocab (:pointer (:struct llama-vocab))
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-rope-type :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-ctx-train :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-embd :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-embd-inp :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-layer :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-head :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-head-kv :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-swa :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-rope-freq-scale-train :float
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-n-cls-out :int
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-cls-label :string
+  (model (:pointer (:struct llama-model)))
+  (i :int))
+
 (cffi:defcfun llama-vocab-type :int
-  (model (:pointer (:struct llama-model))))
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-rope-type :int
-  (model (:pointer (:struct llama-model))))
-
-(cffi:defcfun llama-rope-freq-scale-train :float
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-n-tokens :int
+  (vocab (:pointer (:struct llama-vocab))))
 
 ;; llama_model_meta_val_str
 ;; llama_model_meta_count
+;; llama_model_meta_key_str
 ;; llama_model_meta_key_by_index
 ;; llama_model_meta_val_str_by_index
 
@@ -355,10 +414,12 @@
 (cffi:defcfun llama-model-size :unsigned-long
   (model (:pointer (:struct llama-model))))
 
+(cffi:defcfun llama-model-chat-template :string
+  (model (:pointer (:struct llama-model)))
+  (name :string))
+
 (cffi:defcfun llama-model-n-params :unsigned-long
   (model (:pointer (:struct llama-model))))
-
-;; llama_get_model_tensor
 
 (cffi:defcfun llama-model-has-encoder :bool
   (model (:pointer (:struct llama-model))))
@@ -372,59 +433,66 @@
 (cffi:defcfun llama-model-is-recurrent :bool
   (model (:pointer (:struct llama-model))))
 
+(cffi:defcfun llama-model-is-hybrid :bool
+  (model (:pointer (:struct llama-model))))
+
+(cffi:defcfun llama-model-is-difussion :bool
+  (model (:pointer (:struct llama-model))))
+
 (cffi:defcfun llama-model-quantize :int
   (fname-inp :string)
   (fname-out :string)
   (params (:pointer (:struct llama-model-quantize-params))))
 
-(cffi:defcfun llama-lora-adapter-init (:struct llama-lora-adapter)
+(cffi:defcfun llama-adapter-lora-init (:struct llama-adapter-lora)
   (model (:pointer (:struct llama-model)))
   (path-lora :string))
 
-(cffi:defcfun llama-lora-adapter-set :int
+;; llama-adapter-meta-val-str
+;; llama-adapter-meta-count
+;; llama-adapter-meta-key-by
+;; llama-adapter-meta-val-str-by-index
+
+(cffi:defcfun llama-adapter-lora-free :void
+  (adapter (:pointer (:struct llama-adapter-lora))))
+
+;; llama-adapter-get-alora-n-invocation-tokens
+;; llama-adapter-get-alora-invocation-tokens
+
+(cffi:defcfun llama-set-adapter-lora :int
   (ctx (:pointer (:struct llama-context)))
-  (adapter (:pointer (:struct llama-lora-adapter)))
+  (adapter (:pointer (:struct llama-adapter-lora)))
   (scale :float))
 
-(cffi:defcfun llama-lora-adapter-remove :int
+(cffi:defcfun llama-rm-adapter-lora :int
   (ctx (:pointer (:struct llama-context)))
-  (adapter (:pointer (:struct llama-lora-adapter))))
+  (adapter (:pointer (:struct llama-adapter-lora))))
 
-(cffi:defcfun llama-lora-adapter-clear :void
+(cffi:defcfun llama-clear-adapter-lora :void
   (ctx (:pointer (:struct llama-context))))
 
-(cffi:defcfun llama-lora-adapter-free :void
-  (adapter (:pointer (:struct llama-lora-adapter))))
-
-(cffi:defcfun llama-control-vector-apply :int
-  (lctx (:pointer (:struct llama-context)))
+(cffi:defcfun llama-apply-adapter-cvec :int
+  (ctx (:pointer (:struct llama-context)))
   (data (:pointer :float))
   (len :int)
   (n-embd :int)
   (il-start :int)
   (il-end :int))
 
-;; KV cache
+;; Memory
 
-;; llama_kv_cache_view_cell
-;; llama_kv_cache_view
-;; llama_kv_cache_view_init
-;; llama_kv_cache_view_free
-;; llama_kv_cache_view_update
-;; llama_get_kv_cache_token_count
-;; llama_get_kv_cache_used_cells
+(cffi:defcfun llama-memory-clear :void
+  (mem (:pointer (:struct llama-memory)))
+  (data :bool))
 
-(cffi:defcfun llama-kv-cache-clear :void
-  (ctx (:pointer (:struct llama-context))))
-
-;; llama_kv_cache_seq_rm
-;; llama_kv_cache_seq_cp
-;; llama_kv_cache_seq_keep
-;; llama_kv_cache_seq_add
-;; llama_kv_cache_seq_div
-;; llama_kv_cache_seq_pos_max
-;; llama_kv_cache_defrag
-;; llama_kv_cache_update
+;; llama_memory_seq_rm
+;; llama_memory_seq_cp
+;; llama_memory_seq_keep
+;; llama_memory_seq_add
+;; llama_memory_seq_div
+;; llama_memory_seq_pos_min
+;; llama_memory_seq_pos_max
+;; llama_memory_can_shift
 
 ;; State / sessions
 
@@ -456,8 +524,11 @@
   (src (:pointer :uint8))
   (seq-id llama-seq-id))
 
-;; llama-state-seq-load-file
 ;; llama-state-seq-save-file
+;; llama-state-seq-load-file
+;; llama-state-seq-get-size-ext
+;; llama-state-seq-get-data-ext
+;; llama-state-seq-set-data-ext
 
 ;; Decoding
 
@@ -500,6 +571,10 @@
   (ctx (:pointer (:struct llama-context)))
   (causal-attn :bool))
 
+(cffi:defcfun llama-set-warmup :void
+  (ctx (:pointer (:struct llama-context)))
+  (warmup :bool))
+
 (cffi:defcfun llama-set-abort-callback :void
   (ctx (:pointer (:struct llama-context)))
   (abort-callback :pointer)
@@ -528,75 +603,78 @@
 
 ;; Vocab
 
-(cffi:defcfun llama-token-get-text :string
-  (model (:pointer (:struct llama-model)))
+(cffi:defcfun llama-vocab-get-text :string
+  (vocab (:pointer (:struct llama-vocab)))
   (token llama-token))
 
-(cffi:defcfun llama-token-get-score :float
-  (model (:pointer (:struct llama-model)))
+(cffi:defcfun llama-vocab-get-score :float
+  (vocab (:pointer (:struct llama-vocab)))
   (token llama-token))
 
-(cffi:defcfun llama-token-get-attr :int
-  (model (:pointer (:struct llama-model)))
+(cffi:defcfun llama-vocab-get-attr :int
+  (vocab (:pointer (:struct llama-vocab)))
   (token llama-token))
 
-(cffi:defcfun llama-token-is-eog :bool
-  (model (:pointer (:struct llama-model)))
+(cffi:defcfun llama-vocab-is-eog :bool
+  (vocab (:pointer (:struct llama-vocab)))
   (token llama-token))
 
-(cffi:defcfun llama-token-is-control :bool
-  (model (:pointer (:struct llama-model)))
+(cffi:defcfun llama-vocab-is-control :bool
+  (vocab (:pointer (:struct llama-vocab)))
   (token llama-token))
 
-(cffi:defcfun llama-token-bos llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-bos llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-eos llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-eos llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-eot llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-eot llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-cls llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-sep llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-sep llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-nl llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-nl llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-pad llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-pad llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-mask llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-add-bos-token :int
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-get-add-bos :int
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-add-eos-token :int
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-get-add-eos :int
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-fim-pre llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-get-add-sep :int
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-fim-suf llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-fim-pre llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-fim-mid llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-fim-suf llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-fim-pad llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-fim-mid llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-fim-rep llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-fim-pad llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
-(cffi:defcfun llama-token-fim-sep llama-token
-  (model (:pointer (:struct llama-model))))
+(cffi:defcfun llama-vocab-fim-rep llama-token
+  (vocab (:pointer (:struct llama-vocab))))
+
+(cffi:defcfun llama-vocab-fim-sep llama-token
+  (vocab (:pointer (:struct llama-vocab))))
 
 ;; Tokenization
 
 (cffi:defcfun llama-tokenize :int
-  (model (:pointer (:struct llama-model)))
+  (vocab (:pointer (:struct llama-vocab)))
   (text :string)
   (text-len :int)
   (tokens (:pointer llama-token))
@@ -605,15 +683,15 @@
   (parse-special :bool))
 
 (cffi:defcfun llama-token-to-piece :int
-  (model (:pointer (:struct llama-model)))
+  (vocab (:pointer (:struct llama-vocab)))
   (token llama-token)
   (buf :string)
   (length :int)
-  (lstrip :int)  
+  (lstrip :int)
   (special :bool))
 
 (cffi:defcfun llama-detokenize :int
-  (model (:pointer (:struct llama-model)))
+  (vocab (:pointer (:struct llama-vocab)))
   (tokens (:pointer llama-token))
   (n-tokens :int)
   (text :string)
@@ -624,7 +702,6 @@
 ;; Chat templates
 
 (cffi:defcfun llama-chat-apply-template :int
-  (model (:pointer (:struct llama-model)))
   (tmpl :string)
   (chat (:pointer (:struct llama-chat-message)))
   (n-msg :int)
@@ -632,11 +709,16 @@
   (buf :string)
   (length :int))
 
+(cffi:defcfun llama-chat-builtin-templates :int
+  (output (:pointer :string))
+  (len :int))
+
 ;; Sampling API
 
 ;; llama_sampler_context_t
 ;; llama_sampler_i
 ;; llama_sampler
+;; llama_sampler_init
 
 (cffi:defcfun llama-sampler-name :string
   (smpl (:pointer (:struct llama-sampler))))
@@ -681,8 +763,6 @@
 (cffi:defcfun llama-sampler-init-dist (:pointer (:struct llama-sampler))
   (seed :unsigned-int))
 
-(cffi:defcfun llama-sampler-init-softmax (:pointer (:struct llama-sampler)))
-
 (cffi:defcfun llama-sampler-init-top-k (:pointer (:struct llama-sampler))
   (k :int))
 
@@ -693,10 +773,6 @@
 (cffi:defcfun llama-sampler-init-min-p (:pointer (:struct llama-sampler))
   (p :float)
   (min-keep :unsigned-long))
-
-(cffi:defcfun llama-sampler-init-tail-free (:pointer (:struct llama-sampler))
-  (z :float)
-  (min-keep :unsigned-long))  
 
 (cffi:defcfun llama-sampler-init-typical (:pointer (:struct llama-sampler))
   (p :float)
@@ -716,6 +792,9 @@
   (min-keep :unsigned-long)
   (seed :unsigned-int))
 
+(cffi:defcfun llama-sampler-init-top-n-sigma (:pointer (:struct llama-sampler))
+  (n :float))
+
 (cffi:defcfun llama-sampler-init-mirostat (:pointer (:struct llama-sampler))
   (n-vocab :int)
   (seed :unsigned-int)
@@ -729,20 +808,19 @@
   (eta :float))
 
 (cffi:defcfun llama-sampler-init-grammar (:pointer (:struct llama-sampler))
-  (model (:pointer (:struct llama-model)))
+  (vocab (:pointer (:struct llama-vocab)))
   (grammar-str :string)
   (grammar-root :string))
 
+;; llama_sampler_init_grammar_lazy_patterns
+
 (cffi:defcfun llama-sampler-init-penalties (:pointer (:struct llama-sampler))
-  (n-vocab :int)
-  (special-eos-id llama-token)
-  (linefeed-id llama-token)
   (penalty-last-n :int)
   (penalty-repeat :float)
   (penalty-freq :float)
-  (penalty-present :float)
-  (penalize-nl :bool)
-  (ignore-eos :bool))
+  (penalty-present :float))
+
+;; (cffi:defcfun llama-sampler-init-dry
 
 (cffi:defcfun llama-sampler-init-logit-bias (:pointer (:struct llama-sampler))
   (n-vocab :int)
@@ -750,7 +828,7 @@
   (logit-bias (:pointer (:struct llama-logit-bias))))
 
 (cffi:defcfun llama-sampler-init-infill (:pointer (:struct llama-sampler))
-  (model (:pointer (:struct llama-model))))
+  (model (:pointer (:struct llama-vocab))))
 
 (cffi:defcfun llama-sampler-get-seed :unsigned-int
   (smpl (:pointer (:struct llama-sampler))))
@@ -793,4 +871,10 @@
 (cffi:defcfun llama-perf-sampler-reset :void
   (smpl (:pointer (:struct llama-sampler))))
 
-;; llama_perf_dump_yaml
+(cffi:defcfun llama-memory-breakdown-print :void
+  (ctx (:pointer (:struct llama-context))))
+
+;; llama_opt_param_filter_all
+;; llama_opt_params
+;; llama_opt_init
+;; llama_opt_epoch
